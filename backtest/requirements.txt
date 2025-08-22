@@ -1,0 +1,32 @@
+# 核心回测框架
+backtrader==1.9.78.123
+
+# 数据处理
+pandas>=1.5.0
+numpy>=1.21.0
+yfinance>=0.2.0
+ccxt>=4.0.0
+
+# 技术指标
+TA-Lib>=0.4.25
+pandas-ta>=0.3.14b
+
+# 可视化
+matplotlib>=3.5.0
+plotly>=5.0.0
+
+# 配置管理
+PyYAML>=6.0
+python-dotenv>=0.19.0
+
+# 日志
+loguru>=0.6.0
+
+# 工具类
+tqdm>=4.64.0
+requests>=2.28.0
+
+# 开发工具
+pytest>=7.0.0
+black>=22.0.0
+flake8>=5.0.0
