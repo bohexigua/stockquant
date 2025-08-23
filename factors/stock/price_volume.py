@@ -295,19 +295,7 @@ class StockPriceVolumeFactorCalculator:
                 SELECT MAX(trade_date) 
                 FROM trade_factor_stock 
                 WHERE code = %s AND (
-                    turnover_rate_today IS NOT NULL OR
-                    turnover_rate_5d_avg IS NOT NULL OR
-                    turnover_rate_10d_avg IS NOT NULL OR
-                    turnover_rate_20d_avg IS NOT NULL OR
-                    volume_surge_today IS NOT NULL OR
-                    volume_surge_5d IS NOT NULL OR
-                    avg_return_5d IS NOT NULL OR
-                    avg_return_10d IS NOT NULL OR
-                    avg_return_20d IS NOT NULL OR
-                    pullback_ma5_days IS NOT NULL OR
-                    divergence_today IS NOT NULL OR
-                    market_cap IS NOT NULL OR
-                    volume_price_divergence_60min IS NOT NULL
+                    market_cap IS NOT NULL
                 )
                 """
                 cursor.execute(sql, (code,))
@@ -439,18 +427,53 @@ class StockPriceVolumeFactorCalculator:
             # 计算5日移动平均线
             stock_data['ma5'] = stock_data['close'].rolling(window=5, min_periods=1).mean()
             
-            # 计算回踩五日线：收盘价低于5日均线
-            stock_data['below_ma5'] = (stock_data['close'] < stock_data['ma5']).astype(int)
+            # 计算回踩五日线：当日价格波动触及五日线（最低价<=5日均线 或 收盘价<5日均线）
+            stock_data['below_ma5'] = (stock_data['low'] <= stock_data['ma5']).astype(int)
             
             # 计算近5日回踩五日线天数
             stock_data['pullback_ma5_days'] = stock_data['below_ma5'].rolling(window=5, min_periods=1).sum()
             
-            # 计算分歧：当日涨幅与成交量变化方向不一致
-            stock_data['vol_change'] = stock_data['vol'].pct_change()
+            # 计算分歧：基于成交量放大和涨跌停情况判断
+            # 计算1-5日平均成交量
+            stock_data['vol_ma5'] = stock_data['vol'].rolling(window=5, min_periods=1).mean()
+            
+            # 计算成交量放大倍数
+            stock_data['vol_ratio'] = stock_data['vol'] / stock_data['vol_ma5']
+            
+            # 判断是否接近涨跌停（涨跌幅绝对值 >= 9%）
+            stock_data['near_limit'] = (abs(stock_data['chg_pct']) >= 9.0).astype(int)
+            
+            # 计算分歧：成交量放大30%以上 + 涨跌停附近放量
+            # 基础放量条件
+            volume_surge = (
+                # 基础条件：成交量较5日均量放大30%以上
+                (stock_data['vol_ratio'] >= 1.3) &
+                (
+                    # 普通情况：非涨跌停附近的放量
+                    (stock_data['near_limit'] == 0) |
+                    # 涨跌停情况：需要显著放量（50%以上）
+                    ((stock_data['near_limit'] == 1) & (stock_data['vol_ratio'] >= 1.5))
+                )
+            )
+            
+            # 高位分歧（正值）：上涨时放量 + 价格在相对高位
+            high_divergence = (
+                volume_surge & 
+                (stock_data['chg_pct'] > 0) &
+                (stock_data['close'] > stock_data['close'].rolling(window=10, min_periods=1).mean())
+            )
+            
+            # 低位分歧（负值）：下跌时放量 + 价格在相对低位
+            low_divergence = (
+                volume_surge & 
+                (stock_data['chg_pct'] < 0) &
+                (stock_data['close'] < stock_data['close'].rolling(window=10, min_periods=1).mean())
+            )
+            
+            # 分歧信号：高位分歧=1，低位分歧=-1，无分歧=0
             stock_data['divergence_today'] = (
-                ((stock_data['chg_pct'] > 0) & (stock_data['vol_change'] < 0)) |
-                ((stock_data['chg_pct'] < 0) & (stock_data['vol_change'] > 0))
-            ).astype(int)
+                high_divergence.astype(int) - low_divergence.astype(int)
+            )
             
             result_list.append(stock_data[['code', 'trade_date', 'name', 'pullback_ma5_days', 'divergence_today']])
         
@@ -474,7 +497,7 @@ class StockPriceVolumeFactorCalculator:
     
     def calculate_volume_price_divergence_60min(self, min60_df: pd.DataFrame) -> pd.DataFrame:
         """
-        计算60分钟量价背离因子
+        计算60分钟量价背离因子（每个60分钟周期判断）
         
         Args:
             min60_df: 60分钟行情数据
@@ -484,30 +507,57 @@ class StockPriceVolumeFactorCalculator:
         """
         result_list = []
         
-        # 按股票和交易日分组
-        for (code, trade_date), group in min60_df.groupby(['code', 'trade_date']):
-            group = group.sort_values('trade_time')
+        # 按股票分组，对每个60分钟周期进行背离判断
+        for code in min60_df['code'].unique():
+            stock_data = min60_df[min60_df['code'] == code].copy()
+            stock_data = stock_data.sort_values(['trade_date', 'trade_time'])
             
-            if len(group) < 2:
-                # 数据不足，无法判断背离
-                divergence = 0
-            else:
-                # 计算价格和成交量的变化趋势
-                price_trend = (group['close'].iloc[-1] - group['close'].iloc[0]) / group['close'].iloc[0]
-                vol_trend = (group['vol'].iloc[-1] - group['vol'].iloc[0]) / max(group['vol'].iloc[0], 1)
+            # 为每个60分钟周期计算背离
+            for i in range(len(stock_data)):
+                current_bar = stock_data.iloc[i]
                 
-                # 判断量价背离：价格上涨但成交量下降，或价格下跌但成交量上升
-                divergence = int(
-                    (price_trend > 0.02 and vol_trend < -0.1) or
-                    (price_trend < -0.02 and vol_trend > 0.1)
-                )
-            
-            result_list.append({
-                'code': code,
-                'trade_date': trade_date,
-                'name': group['name'].iloc[0],
-                'volume_price_divergence_60min': divergence
-            })
+                # 需要至少3个历史周期才能判断背离
+                if i < 2:
+                    divergence = 0
+                else:
+                    # 获取当前周期及之前2个周期的数据（共3个周期）
+                    recent_data = stock_data.iloc[max(0, i-2):i+1]
+                    
+                    # 计算3周期均线
+                    ma3 = recent_data['close'].mean()
+                    
+                    # 找到3周期内的最高点和最低点
+                    high_price = float(recent_data['close'].max())
+                    high_vol = float(recent_data[recent_data['close'] == recent_data['close'].max()]['vol'].iloc[0])
+                    low_price = float(recent_data['close'].min())
+                    low_vol = float(recent_data[recent_data['close'] == recent_data['close'].min()]['vol'].iloc[0])
+                    
+                    # 当前周期数据
+                    current_close = float(current_bar['close'])
+                    current_vol = float(current_bar['vol'])
+                    ma3 = float(ma3)
+                    
+                    divergence = 0
+                    
+                    # 顶背离：价格接近3周期高点但成交量明显萎缩
+                    if (current_close >= high_price * 0.98 and  # 价格接近高点
+                        current_vol < high_vol * 0.7 and  # 成交量明显萎缩
+                        current_close > ma3):  # 仍在均线上方
+                        divergence = 1  # 顶背离（看跌信号）
+                    
+                    # 底背离：价格接近3周期低点但成交量放大
+                    elif (current_close <= low_price * 1.02 and  # 价格接近低点
+                          current_vol > low_vol * 1.3 and  # 成交量明显放大
+                          current_close < ma3):  # 仍在均线下方
+                        divergence = -1  # 底背离（看涨信号）
+                
+                result_list.append({
+                    'code': code,
+                    'trade_date': current_bar['trade_date'],
+                    'trade_time': current_bar['trade_time'],
+                    'name': current_bar['name'],
+                    'volume_price_divergence_60min': divergence
+                })
         
         if result_list:
             return pd.DataFrame(result_list)
@@ -567,7 +617,7 @@ class StockPriceVolumeFactorCalculator:
                 
                 if stock_daily.empty:
                     continue
-                
+            
                 # 计算各类因子
                 turnover_factors = self.calculate_turnover_rate(stock_daily, stock_basic)
                 volume_factors = self.calculate_volume_surge(stock_daily)
@@ -575,7 +625,7 @@ class StockPriceVolumeFactorCalculator:
                 technical_factors = self.calculate_technical_factors(stock_daily)
                 market_cap_factors = self.calculate_market_cap(stock_basic) if not stock_basic.empty else pd.DataFrame()
                 divergence_60min_factors = self.calculate_volume_price_divergence_60min(stock_60min) if not stock_60min.empty else pd.DataFrame()
-                
+            
                 # 合并所有因子数据
                 factor_df = stock_daily[['code', 'trade_date', 'name']].copy()
                 
@@ -610,7 +660,7 @@ class StockPriceVolumeFactorCalculator:
                     factor_df = pd.merge(factor_df, divergence_60min_factors[[
                         'code', 'trade_date', 'volume_price_divergence_60min'
                     ]], on=['code', 'trade_date'], how='left')
-                
+            
                 # 数据类型转换和清洗
                 factor_df['trade_date'] = pd.to_datetime(factor_df['trade_date'])
                 
@@ -651,7 +701,7 @@ class StockPriceVolumeFactorCalculator:
                 # 每处理50个交易日打印一次进度
                 if total_dates > 50 and idx % 10 == 0:
                     logger.info(f"  - 已处理 {idx}/{total_stocks} 只个股")
-            
+        
             # 返回所有处理的因子数据
             if all_factor_list:
                 final_factor_df = pd.DataFrame(all_factor_list)
@@ -767,7 +817,7 @@ class StockPriceVolumeFactorCalculator:
             
             # 计算因子
             factor_df = self.calculate_price_volume_factors(daily_df, min60_df, basic_df)
-            
+        
             if not factor_df.empty:
                 logger.info(f"成功更新 {len(factor_df)} 条个股量价因子数据")
             else:

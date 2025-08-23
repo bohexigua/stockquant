@@ -448,16 +448,16 @@ class ConceptFactorCalculator:
                 # 获取最近3天的净流入数据
                 recent_net_amounts = hist_data.tail(3)['net_amount'].fillna(0)
                 if len(recent_net_amounts) >= 3:
-                    # 前两天是正的，今天变负，表明分歧
+                    # 前两天是正的，今天变负，表明高位分歧（负面信号）
                     if (recent_net_amounts.iloc[-3] > 0 and 
                         recent_net_amounts.iloc[-2] > 0 and 
                         recent_net_amounts.iloc[-1] < 0):
-                        divergence_signals += 1
-                    # 或者前几天是负的，今天变正，也表明分歧
+                        return 1  # 高位分歧
+                    # 或者前几天是负的，今天变正，表明低位分歧（正面信号）
                     elif (recent_net_amounts.iloc[-3] < 0 and 
                           recent_net_amounts.iloc[-2] < 0 and 
                           recent_net_amounts.iloc[-1] > 0):
-                        divergence_signals += 1
+                        return -1  # 低位分歧
             except:
                 pass
         
@@ -480,53 +480,21 @@ class ConceptFactorCalculator:
                         hist_up_ratios.append(hist_up / hist_total)
                 
                 if len(hist_up_ratios) >= 2:
-                    # 如果上涨比例连续下降超过20%，认为出现分歧
+                    # 如果上涨比例连续下降超过20%，认为出现高位分歧
                     if (len(hist_up_ratios) >= 3 and 
                         hist_up_ratios[-1] < hist_up_ratios[-2] - 0.2 and
                         hist_up_ratios[-2] < hist_up_ratios[-3] - 0.1):
-                        divergence_signals += 1
+                        return 1  # 高位分歧
+                    # 如果上涨比例连续上升超过20%，认为出现低位分歧
+                    elif (len(hist_up_ratios) >= 3 and 
+                          hist_up_ratios[-1] > hist_up_ratios[-2] + 0.2 and
+                          hist_up_ratios[-2] > hist_up_ratios[-3] + 0.1):
+                        return -1  # 低位分歧
         
         # 如果没有分歧信号，返回0
-        if divergence_signals == 0:
-            return 0
+        return 0
         
-        # 判断是高位分歧还是低位分歧
-        # 基于当前价格相对于历史价格的位置
-        try:
-            if len(hist_data) >= 20:
-                # 获取最近20天的价格数据
-                recent_prices = hist_data.tail(20)['close'].fillna(0)
-                current_price = row['close'] if pd.notna(row['close']) else 0
-                
-                if len(recent_prices) > 0 and current_price > 0:
-                    # 计算当前价格在最近20天中的分位数
-                    price_percentile = (recent_prices < current_price).sum() / len(recent_prices)
-                    
-                    # 如果价格在80%分位数以上，认为是高位分歧（正数）
-                    if price_percentile >= 0.8:
-                        return 1
-                    # 如果价格在20%分位数以下，认为是低位分歧（负数）
-                    elif price_percentile <= 0.2:
-                        return -1
-                    # 中位分歧，根据涨跌比例判断
-                    else:
-                        # 如果上涨家数多，倾向于高位分歧
-                        if total_num > 0 and (up_num / total_num) > 0.5:
-                            return 1
-                        else:
-                            return -1
-            
-            # 数据不足时，根据涨跌比例简单判断
-            if total_num > 0:
-                up_ratio = up_num / total_num
-                # 上涨家数多时倾向于高位分歧，下跌家数多时倾向于低位分歧
-                return 1 if up_ratio > 0.5 else -1
-            else:
-                return 1  # 默认高位分歧
-                
-        except:
-            # 异常情况下，默认返回高位分歧
-            return 1
+
     
     def _calculate_avg_stock_rank(self, concept_code: str, hist_data: pd.DataFrame, days: int) -> float:
         """
