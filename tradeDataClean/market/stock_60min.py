@@ -97,32 +97,36 @@ class Stock60MinCleaner:
             return datetime.now().strftime('%Y%m%d')
     
     def get_trading_date_range(self) -> tuple:
-        """获取交易日期范围，start_date为end_date减去30天"""
+        """获取交易日期范围，end_date为距离今日最近的交易时间，start_date为今日-30天"""
         try:
             with self.connection.cursor() as cursor:
-                sql = """
+                # 获取距离今日最近的交易时间作为end_date
+                today = datetime.now().strftime('%Y%m%d')
+                sql_end = """
                 SELECT MAX(cal_date) as end_date
                 FROM trade_market_calendar 
-                WHERE is_open = 1
+                WHERE is_open = 1 AND cal_date <= %s
                 """
-                cursor.execute(sql)
-                result = cursor.fetchone()
-                if result and result[0]:
-                    end_date = result[0].strftime('%Y%m%d')
-                    # start_date为end_date减去30天
-                    end_date_obj = datetime.strptime(end_date, '%Y%m%d')
-                    start_date = (end_date_obj - timedelta(days=30)).strftime('%Y%m%d')
-                    return start_date, end_date
+                cursor.execute(sql_end, (today,))
+                end_result = cursor.fetchone()
+                
+                if end_result and end_result[0]:
+                    end_date = end_result[0].strftime('%Y%m%d')
                 else:
-                    # 如果没有找到，使用默认日期范围
-                    end_date = datetime.now().strftime('%Y%m%d')
-                    start_date = (datetime.now() - timedelta(days=30)).strftime('%Y%m%d')
-                    return start_date, end_date
+                    # 如果没有找到距离今日最近的交易日，使用今日
+                    end_date = today
+                
+                # 计算今日-30天作为start_date
+                start_date_obj = datetime.now() - timedelta(days=30)
+                start_date = start_date_obj.strftime('%Y%m%d')
+                
+                return start_date, end_date
         except Exception as e:
             logger.error(f"获取交易日期范围失败: {e}")
-            end_date = datetime.now().strftime('%Y%m%d')
-            start_date = (datetime.now() - timedelta(days=30)).strftime('%Y%m%d')
-            return start_date, end_date
+            today = datetime.now().strftime('%Y%m%d')
+            start_date_obj = datetime.now() - timedelta(days=30)
+            start_date = start_date_obj.strftime('%Y%m%d')
+            return start_date, today
     
     def fetch_stock_basic(self) -> pd.DataFrame:
         """获取股票基础信息（主要用于获取股票名称）"""

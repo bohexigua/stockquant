@@ -161,9 +161,9 @@ class StockHotCleaner:
                             fields='ts_code,ts_name,rank,pct_change,current_price,rank_time'
                         )
                         
-                        # 过滤掉包含NaN值的数据行
+                        # 填充NaN值为空字符串
                         if not df_hot.empty:
-                            df_hot = df_hot.dropna()
+                            df_hot = df_hot.fillna('')
                         signal.alarm(0)  # 取消超时
                     except TimeoutError:
                         signal.alarm(0)  # 取消超时

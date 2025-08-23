@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-题材数据清洗模块
-从Tushare获取开盘啦题材库数据并写入数据库
+股票每日基本面指标数据清洗模块
+从Tushare获取股票每日基本面指标数据并写入数据库
 """
 
+import pdb
 import sys
 import os
 import logging
@@ -28,8 +29,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class ThemeCleaner:
-    """题材数据清洗器"""
+class StockBasicDailyCleaner:
+    """股票每日基本面指标数据清洗器"""
     
     def __init__(self):
         """初始化"""
@@ -37,6 +38,7 @@ class ThemeCleaner:
         self.tushare_token = config.tushare.token
         self.connection = None
         self.tushare_api = None
+        self.stock_basic_cache = None  # 缓存股票基础信息
         
         # 初始化Tushare API
         self._init_tushare()
@@ -120,10 +122,37 @@ class ThemeCleaner:
             start_date = (datetime.now() - timedelta(days=30)).strftime('%Y%m%d')
             return start_date, end_date
     
-    def fetch_theme_data_range(self, start_date: str, end_date: str) -> pd.DataFrame:
-        """获取指定日期范围的题材数据（单日循环获取并立即入库）"""
+    def fetch_stock_basic(self) -> pd.DataFrame:
+        """获取股票基础信息（主要用于获取股票名称）"""
+        if self.stock_basic_cache is not None:
+            return self.stock_basic_cache
+        
         try:
-            logger.info(f"开始获取题材数据，日期范围: {start_date} - {end_date}")
+            logger.info("开始获取股票基础信息")
+            
+            # 调用Tushare的stock_basic接口
+            df = self.tushare_api.stock_basic(
+                list_status='L',
+                fields='ts_code,name'
+            )
+            
+            if df.empty:
+                logger.warning("未获取到股票基础信息")
+                return pd.DataFrame()
+            
+            # 缓存结果
+            self.stock_basic_cache = df
+            logger.info(f"成功获取到{len(df)}只股票的基础信息")
+            return df
+            
+        except Exception as e:
+            logger.error(f"获取股票基础信息失败: {e}")
+            return pd.DataFrame()
+    
+    def fetch_daily_basic_data_range(self, start_date: str, end_date: str) -> pd.DataFrame:
+        """获取指定日期范围的股票每日基本面指标数据（单日循环获取并立即入库）"""
+        try:
+            logger.info(f"开始获取股票每日基本面指标数据，日期范围: {start_date} - {end_date}")
             
             # 获取日期范围内的所有交易日
             trading_dates = self._get_trading_dates_in_range(start_date, end_date)
@@ -142,20 +171,29 @@ class ThemeCleaner:
                         logger.info(f"{trade_date}数据已存在，跳过获取")
                         continue
                     
-                    logger.info(f"正在获取{trade_date}的题材数据")
+                    logger.info(f"正在获取{trade_date}的股票每日基本面指标数据")
                     
                     # 获取单日数据
-                    df_daily = self.tushare_api.kpl_concept(trade_date=trade_date)
+                    df_daily_basic = self.tushare_api.daily_basic(
+                        trade_date=trade_date,
+                        fields='ts_code,trade_date,turnover_rate,turnover_rate_f,volume_ratio,pe,pe_ttm,pb,total_share,float_share,free_share,total_mv,circ_mv'
+                    )
                     
-                    if not df_daily.empty:
-                        logger.info(f"成功获取{trade_date}的{len(df_daily)}条数据")
+                    if not df_daily_basic.empty:
+                        logger.info(f"成功获取{trade_date}的{len(df_daily_basic)}条数据")
+                        
+                        # 获取股票基础信息
+                        df_basic = self.fetch_stock_basic()
+                        if df_basic.empty:
+                            logger.error(f"无法获取股票基础信息，跳过{trade_date}")
+                            continue
                         
                         # 清洗数据
-                        df_cleaned = self.clean_theme_data(df_daily)
+                        df_cleaned = self.clean_daily_basic_data(df_daily_basic, df_basic)
                         
                         if not df_cleaned.empty:
                             # 立即入库
-                            success = self.insert_theme_data(df_cleaned)
+                            success = self.insert_daily_basic_data(df_cleaned)
                             if success:
                                 total_count += len(df_cleaned)
                                 logger.info(f"{trade_date}数据已成功入库，共{len(df_cleaned)}条")
@@ -175,7 +213,7 @@ class ThemeCleaner:
             return pd.DataFrame({'total_count': [total_count]})
             
         except Exception as e:
-            logger.error(f"获取题材数据失败: {e}")
+            logger.error(f"获取股票每日基本面指标数据失败: {e}")
             return pd.DataFrame()
     
     def _get_trading_dates_in_range(self, start_date: str, end_date: str) -> List[str]:
@@ -211,7 +249,7 @@ class ThemeCleaner:
             with self.connection.cursor() as cursor:
                 sql = """
                 SELECT COUNT(*) 
-                FROM trade_market_theme 
+                FROM trade_market_stock_basic_daily 
                 WHERE trade_date = STR_TO_DATE(%s, '%%Y%%m%%d')
                 """
                 cursor.execute(sql, (trade_date,))
@@ -226,29 +264,56 @@ class ThemeCleaner:
             logger.error(f"检查日期{trade_date}是否存在失败: {e}")
             return False
     
-    def clean_theme_data(self, df_theme: pd.DataFrame) -> pd.DataFrame:
-        """清洗题材数据"""
-        if df_theme.empty:
-            return df_theme
+    def clean_daily_basic_data(self, df_daily_basic: pd.DataFrame, df_basic: pd.DataFrame) -> pd.DataFrame:
+        """清洗股票每日基本面指标数据"""
+        if df_daily_basic.empty:
+            return df_daily_basic
         
         try:
+            # 合并股票基础信息，获取股票名称
+            df_merged = df_daily_basic.merge(
+                df_basic[['ts_code', 'name']], 
+                on='ts_code', 
+                how='left'
+            )
+            
             # 重命名列以匹配数据库表结构
-            df_cleaned = df_theme.rename(columns={
+            df_cleaned = df_merged.rename(columns={
                 'trade_date': 'trade_date',
                 'ts_code': 'code',
                 'name': 'name',
-                'z_t_num': 'z_t_num',
-                'up_num': 'up_num'
+                'turnover_rate': 'turnover_rate',
+                'turnover_rate_f': 'turnover_rate_f',
+                'volume_ratio': 'volume_ratio',
+                'pe': 'pe',
+                'pe_ttm': 'pe_ttm',
+                'pb': 'pb',
+                'total_share': 'total_share',
+                'float_share': 'float_share',
+                'free_share': 'free_share',
+                'total_mv': 'total_mv',
+                'circ_mv': 'circ_mv'
             })
             
             # 转换日期格式
             df_cleaned['trade_date'] = pd.to_datetime(df_cleaned['trade_date'], format='%Y%m%d').dt.date
             
             # 处理空值和数据类型
-            df_cleaned['z_t_num'] = pd.to_numeric(df_cleaned['z_t_num'], errors='coerce').fillna(0).astype('int')
-            df_cleaned['up_num'] = pd.to_numeric(df_cleaned['up_num'], errors='coerce').fillna(0).astype('int')
+            numeric_columns = ['turnover_rate', 'turnover_rate_f', 'volume_ratio', 'pe', 'pe_ttm', 'pb', 'total_share', 'float_share', 'free_share', 'total_mv', 'circ_mv']
+            for col in numeric_columns:
+                df_cleaned[col] = pd.to_numeric(df_cleaned[col], errors='coerce')
             
-            df_cleaned['rank_value'] = range(1, len(df_cleaned) + 1)
+            # 根据数据库表字段类型填充NaN值
+            # 对于FLOAT类型字段，保持NaN为NULL（数据库可接受）
+            # 但对于股本和市值相关字段，如果为NaN则填充为0
+            share_mv_columns = ['total_share', 'float_share', 'free_share', 'total_mv', 'circ_mv']
+            for col in share_mv_columns:
+                df_cleaned[col] = df_cleaned[col].fillna(0)
+            
+            # 对于估值指标（PE、PB），保持NaN为NULL，因为亏损股票的PE本身就应该为空
+            
+            # 去除没有股票名称的记录
+            df_cleaned = df_cleaned.dropna(subset=['name'])
             
             # 去除重复数据
             df_cleaned = df_cleaned.drop_duplicates(subset=['trade_date', 'code'])
@@ -260,8 +325,8 @@ class ThemeCleaner:
             logger.error(f"数据清洗失败: {e}")
             return pd.DataFrame()
     
-    def insert_theme_data(self, df: pd.DataFrame) -> bool:
-        """将题材数据插入数据库"""
+    def insert_daily_basic_data(self, df: pd.DataFrame) -> bool:
+        """将股票每日基本面指标数据插入数据库"""
         if df.empty:
             logger.warning("没有数据需要插入")
             return False
@@ -270,73 +335,92 @@ class ThemeCleaner:
             with self.connection.cursor() as cursor:
                 # 构建插入SQL
                 sql = """
-                INSERT INTO trade_market_theme 
-                (trade_date, code, name, z_t_num, up_num, rank_value)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO trade_market_stock_basic_daily 
+                (trade_date, code, name, turnover_rate, turnover_rate_f, volume_ratio, 
+                 pe, pe_ttm, pb, total_share, float_share, free_share, total_mv, circ_mv)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON DUPLICATE KEY UPDATE
                 name = VALUES(name),
-                z_t_num = VALUES(z_t_num),
-                up_num = VALUES(up_num),
-                rank_value = VALUES(rank_value),
+                turnover_rate = VALUES(turnover_rate),
+                turnover_rate_f = VALUES(turnover_rate_f),
+                volume_ratio = VALUES(volume_ratio),
+                pe = VALUES(pe),
+                pe_ttm = VALUES(pe_ttm),
+                pb = VALUES(pb),
+                total_share = VALUES(total_share),
+                float_share = VALUES(float_share),
+                free_share = VALUES(free_share),
+                total_mv = VALUES(total_mv),
+                circ_mv = VALUES(circ_mv),
                 updated_time = CURRENT_TIMESTAMP
                 """
                 
                 # 准备数据
                 data_list = []
                 for _, row in df.iterrows():
+                    # 将pandas的NaN值转换为None，以便在数据库中正确存储为NULL
                     data_list.append((
                         row['trade_date'],
                         row['code'],
                         row['name'],
-                        row['z_t_num'],
-                        row['up_num'],
-                        row['rank_value']
+                        None if pd.isna(row['turnover_rate']) else row['turnover_rate'],
+                        None if pd.isna(row['turnover_rate_f']) else row['turnover_rate_f'],
+                        None if pd.isna(row['volume_ratio']) else row['volume_ratio'],
+                        None if pd.isna(row['pe']) else row['pe'],
+                        None if pd.isna(row['pe_ttm']) else row['pe_ttm'],
+                        None if pd.isna(row['pb']) else row['pb'],
+                        None if pd.isna(row['total_share']) else row['total_share'],
+                        None if pd.isna(row['float_share']) else row['float_share'],
+                        None if pd.isna(row['free_share']) else row['free_share'],
+                        None if pd.isna(row['total_mv']) else row['total_mv'],
+                        None if pd.isna(row['circ_mv']) else row['circ_mv']
                     ))
-                
+
                 # 批量插入
                 cursor.executemany(sql, data_list)
                 
-                logger.info(f"成功插入{len(data_list)}条题材数据到数据库")
+                logger.info(f"成功插入{len(data_list)}条股票每日基本面指标数据到数据库")
                 return True
                 
         except Exception as e:
-            logger.error(f"插入题材数据失败: {e}")
+            logger.error(f"插入股票每日基本面指标数据失败: {e}")
             return False
     
-    def update_theme_data(self) -> bool:
-        """更新题材数据"""
+    def update_daily_basic_data(self) -> bool:
+        """更新股票每日基本面指标数据"""
         try:
             start_date, end_date = self.get_trading_date_range()
-            logger.info(f"开始更新题材数据，日期范围: {start_date} - {end_date}")
+            logger.info(f"开始更新股票每日基本面指标数据，日期范围: {start_date} - {end_date}")
             
-            # fetch_theme_data_range 方法已经包含了数据获取、清洗和入库的完整流程
-            result_df = self.fetch_theme_data_range(start_date, end_date)
+            # fetch_daily_basic_data_range 方法已经包含了数据获取、清洗和入库的完整流程
+            result_df = self.fetch_daily_basic_data_range(start_date, end_date)
             
             if not result_df.empty and 'total_count' in result_df.columns:
                 total_count = result_df['total_count'].iloc[0]
                 if total_count > 0:
-                    logger.info(f"题材数据更新完成，共处理{total_count}条数据")
+                    logger.info(f"股票每日基本面指标数据更新完成，共处理{total_count}条数据")
                     return True
                 else:
                     logger.info("所有数据已存在或无新数据需要处理")
                     return True
             else:
-                logger.warning("题材数据更新失败")
+                logger.warning("股票每日基本面指标数据更新失败")
                 return False
             
         except Exception as e:
-            logger.error(f"更新题材数据失败: {e}")
+            logger.error(f"更新股票每日基本面指标数据失败: {e}")
             return False
     
-    def get_theme_data_by_date(self, trade_date: str, limit: int = 10) -> pd.DataFrame:
-        """查询指定日期的题材数据"""
+    def get_daily_basic_data_by_date(self, trade_date: str, limit: int = 10) -> pd.DataFrame:
+        """查询指定日期的股票每日基本面指标数据"""
         try:
             with self.connection.cursor() as cursor:
                 sql = """
-                SELECT trade_date, code, name, z_t_num, up_num, rank_value
-                FROM trade_market_theme
+                SELECT trade_date, code, name, turnover_rate, turnover_rate_f, volume_ratio,
+                       pe, pe_ttm, pb, total_share, float_share, free_share, total_mv, circ_mv
+                FROM trade_market_stock_basic_daily
                 WHERE trade_date = %s
-                ORDER BY z_t_num DESC
+                ORDER BY total_mv DESC
                 LIMIT %s
                 """
                 cursor.execute(sql, (trade_date, limit))
@@ -344,16 +428,17 @@ class ThemeCleaner:
                 
                 if results:
                     df = pd.DataFrame(results, columns=[
-                        'trade_date', 'code', 'name', 'z_t_num', 'up_num', 'rank_value'
+                        'trade_date', 'code', 'name', 'turnover_rate', 'turnover_rate_f', 'volume_ratio',
+                        'pe', 'pe_ttm', 'pb', 'total_share', 'float_share', 'free_share', 'total_mv', 'circ_mv'
                     ])
-                    logger.info(f"查询到{len(df)}条题材数据")
+                    logger.info(f"查询到{len(df)}条股票每日基本面指标数据")
                     return df
                 else:
-                    logger.info(f"未查询到{trade_date}的题材数据")
+                    logger.info(f"未查询到{trade_date}的股票每日基本面指标数据")
                     return pd.DataFrame()
                     
         except Exception as e:
-            logger.error(f"查询题材数据失败: {e}")
+            logger.error(f"查询股票每日基本面指标数据失败: {e}")
             return pd.DataFrame()
     
     def close(self):
@@ -369,14 +454,14 @@ def main():
     cleaner = None
     try:
         # 创建清洗器实例
-        cleaner = ThemeCleaner()
+        cleaner = StockBasicDailyCleaner()
         
-        success = cleaner.update_theme_data()
+        success = cleaner.update_daily_basic_data()
         
         if success:
-            logger.info("题材数据处理完成")
+            logger.info("股票每日基本面指标数据处理完成")
         else:
-            logger.error("题材数据处理失败")
+            logger.error("股票每日基本面指标数据处理失败")
             
     except Exception as e:
         logger.error(f"程序执行失败: {e}")

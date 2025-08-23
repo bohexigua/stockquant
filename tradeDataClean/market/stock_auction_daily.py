@@ -5,6 +5,7 @@
 从Tushare获取股票开盘集合竞价数据并写入数据库
 """
 
+import pdb
 import sys
 import os
 import logging
@@ -173,7 +174,10 @@ class StockAuctionDailyCleaner:
                     logger.info(f"正在获取{trade_date}的股票开盘集合竞价数据")
                     
                     # 获取单日数据
-                    df_auction = self.tushare_api.stk_auction_o(trade_date=trade_date)
+                    df_auction = self.tushare_api.stk_auction(
+                        trade_date=trade_date,
+                        fields='ts_code,trade_date,vol,price,amount,pre_close,turnover_rate,volume_ratio,float_share'
+                    )
                     
                     if not df_auction.empty:
                         logger.info(f"成功获取{trade_date}的{len(df_auction)}条数据")
@@ -186,7 +190,7 @@ class StockAuctionDailyCleaner:
                         
                         # 清洗数据
                         df_cleaned = self.clean_auction_data(df_auction, df_basic)
-                        
+
                         if not df_cleaned.empty:
                             # 立即入库
                             success = self.insert_auction_data(df_cleaned)
@@ -278,20 +282,20 @@ class StockAuctionDailyCleaner:
                 'trade_date': 'trade_date',
                 'ts_code': 'code',
                 'name': 'name',
-                'close': 'close',
-                'open': 'open',
-                'high': 'high',
-                'low': 'low',
                 'vol': 'vol',
+                'price': 'price',
                 'amount': 'amount',
-                'vwap': 'vwap'
+                'pre_close': 'pre_close',
+                'turnover_rate': 'turnover_rate',
+                'volume_ratio': 'volume_ratio',
+                'float_share': 'float_share'
             })
             
             # 转换日期格式
             df_cleaned['trade_date'] = pd.to_datetime(df_cleaned['trade_date'], format='%Y%m%d').dt.date
             
             # 处理空值和数据类型
-            numeric_columns = ['close', 'open', 'high', 'low', 'amount', 'vwap']
+            numeric_columns = ['price', 'amount', 'pre_close', 'turnover_rate', 'volume_ratio', 'float_share']
             for col in numeric_columns:
                 df_cleaned[col] = pd.to_numeric(df_cleaned[col], errors='coerce')
             
@@ -303,7 +307,7 @@ class StockAuctionDailyCleaner:
             
             # 去除重复数据
             df_cleaned = df_cleaned.drop_duplicates(subset=['trade_date', 'code'])
-            
+
             logger.info(f"数据清洗完成，清洗后数据量: {len(df_cleaned)}")
             return df_cleaned
             
@@ -322,34 +326,35 @@ class StockAuctionDailyCleaner:
                 # 构建插入SQL
                 sql = """
                 INSERT INTO trade_market_stock_auction_daily 
-                (trade_date, code, name, close, open, high, low, vol, amount, vwap)
+                (trade_date, code, name, vol, price, amount, pre_close, turnover_rate, volume_ratio, float_share)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON DUPLICATE KEY UPDATE
                 name = VALUES(name),
-                close = VALUES(close),
-                open = VALUES(open),
-                high = VALUES(high),
-                low = VALUES(low),
                 vol = VALUES(vol),
+                price = VALUES(price),
                 amount = VALUES(amount),
-                vwap = VALUES(vwap),
+                pre_close = VALUES(pre_close),
+                turnover_rate = VALUES(turnover_rate),
+                volume_ratio = VALUES(volume_ratio),
+                float_share = VALUES(float_share),
                 updated_time = CURRENT_TIMESTAMP
                 """
                 
                 # 准备数据
                 data_list = []
                 for _, row in df.iterrows():
+                    # 处理NaN值，将其转换为None以便在MySQL中存储为NULL
                     data_list.append((
                         row['trade_date'],
                         row['code'],
                         row['name'],
-                        row['close'],
-                        row['open'],
-                        row['high'],
-                        row['low'],
-                        row['vol'],
-                        row['amount'],
-                        row['vwap']
+                        None if pd.isna(row['vol']) else row['vol'],
+                        None if pd.isna(row['price']) else row['price'],
+                        None if pd.isna(row['amount']) else row['amount'],
+                        None if pd.isna(row['pre_close']) else row['pre_close'],
+                        None if pd.isna(row['turnover_rate']) else row['turnover_rate'],
+                        None if pd.isna(row['volume_ratio']) else row['volume_ratio'],
+                        None if pd.isna(row['float_share']) else row['float_share']
                     ))
                 
                 # 批量插入
@@ -392,8 +397,8 @@ class StockAuctionDailyCleaner:
         try:
             with self.connection.cursor() as cursor:
                 sql = """
-                SELECT trade_date, code, name, close, open, high, low, 
-                       vol, amount, vwap
+                SELECT trade_date, code, name, vol, price, amount, 
+                       pre_close, turnover_rate, volume_ratio, float_share
                 FROM trade_market_stock_auction_daily
                 WHERE trade_date = %s
                 ORDER BY amount DESC
@@ -404,8 +409,8 @@ class StockAuctionDailyCleaner:
                 
                 if results:
                     df = pd.DataFrame(results, columns=[
-                        'trade_date', 'code', 'name', 'close', 'open', 'high', 'low',
-                        'vol', 'amount', 'vwap'
+                        'trade_date', 'code', 'name', 'vol', 'price', 'amount',
+                        'pre_close', 'turnover_rate', 'volume_ratio', 'float_share'
                     ])
                     logger.info(f"查询到{len(df)}条股票开盘集合竞价数据")
                     return df
