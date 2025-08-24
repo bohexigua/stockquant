@@ -176,30 +176,56 @@ class StockThemeRelationCleaner:
             if 'connection' in locals():
                 self._close_db_connection()
     
-    def fetch_theme_concept_data(self) -> pd.DataFrame:
+    def get_all_theme_codes(self) -> List[str]:
         """
-        从Tushare获取题材成分股数据
+        获取所有题材板块代码
+        使用kpl_concept接口获取当日最新的题材板块列表
         
         Returns:
-            包含题材成分股数据的DataFrame
+            题材板块代码列表
         """
         try:
+            # 获取最近的交易日期
             trade_date = self.get_latest_trading_date()
             
-            logger.info(f"开始获取题材成分股数据: {trade_date}")
+            # 使用kpl_concept接口获取题材板块信息
+            df = self.pro.kpl_concept(trade_date=trade_date)
+            if df.empty:
+                logger.warning("未获取到题材板块信息")
+                return []
             
+            theme_codes = df['ts_code'].tolist()
+            logger.info(f"获取到 {len(theme_codes)} 个题材板块代码")
+            return theme_codes
+            
+        except Exception as e:
+            logger.error(f"获取题材板块代码失败: {e}")
+            return []
+    
+    def fetch_theme_concept_data(self, theme_code: str, trade_date: str) -> pd.DataFrame:
+        """
+        从Tushare获取指定题材板块的成分数据
+        
+        Args:
+            theme_code: 题材板块代码
+            trade_date: 交易日期，格式为YYYYMMDD
+            
+        Returns:
+            包含题材板块成分数据的DataFrame
+        """
+        try:
             # 调用Tushare接口获取题材成分股数据
-            df = self.pro.kpl_concept_cons(trade_date=trade_date)
+            df = self.pro.kpl_concept_cons(trade_date=trade_date, ts_code=theme_code)
             
             if df.empty:
-                logger.warning(f"日期 {trade_date} 未获取到题材成分股数据")
+                logger.warning(f"题材板块 {theme_code} 未获取到成分数据")
                 return pd.DataFrame()
             
-            logger.info(f"成功获取 {len(df)} 条题材成分股记录")
+            logger.info(f"题材板块 {theme_code} 成功获取 {len(df)} 条成分记录")
             return df
             
         except Exception as e:
-            logger.error(f"获取题材成分股数据失败: {e}")
+            logger.error(f"获取题材板块 {theme_code} 成分数据失败: {e}")
             return pd.DataFrame()
     
     def clean_theme_relation_data(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -250,6 +276,42 @@ class StockThemeRelationCleaner:
         except Exception as e:
             logger.error(f"数据清洗失败: {e}")
             raise
+    
+    def check_theme_data_exists(self, theme_code: str) -> bool:
+        """
+        检查指定题材板块的数据是否已存在于数据库中
+        
+        Args:
+            theme_code: 题材板块代码
+            
+        Returns:
+            如果数据已存在返回True，否则返回False
+        """
+        try:
+            self._get_db_connection()
+            
+            query = """
+            SELECT COUNT(*) 
+            FROM trade_stock_theme_relation 
+            WHERE theme_sector_code = %s
+            """
+            
+            self.cursor.execute(query, (theme_code,))
+            result = self.cursor.fetchone()
+            
+            count = result[0] if result else 0
+            exists = count > 0
+            
+            if exists:
+                logger.info(f"题材板块 {theme_code} 数据已存在，共 {count} 条记录")
+            
+            return exists
+            
+        except Exception as e:
+            logger.error(f"检查题材板块 {theme_code} 数据是否存在失败: {e}")
+            return False
+        finally:
+            self._close_db_connection()
     
     def insert_theme_relation_data(self, df: pd.DataFrame, batch_size: int = 1000):
         """
@@ -309,25 +371,69 @@ class StockThemeRelationCleaner:
     def update_theme_relation_data(self):
         """
         更新题材关联数据的主方法
-        使用距离今日向前最近的交易日期获取数据
+        先获取所有题材板块代码，然后逐个获取每个板块的成分股数据并立即入库
         """
         try:
-            logger.info(f"开始更新题材关联数据")
+            logger.info("开始更新题材关联数据")
             
-            # 获取题材成分股数据（使用最近的交易日期）
-            df = self.fetch_theme_concept_data()
+            # 获取最近的交易日期
+            trade_date = self.get_latest_trading_date()
             
-            if df.empty:
-                logger.warning("未获取到题材成分股数据")
+            # 获取所有题材板块代码
+            theme_codes = self.get_all_theme_codes()
+            
+            if not theme_codes:
+                logger.warning("未获取到题材板块代码，退出更新")
                 return
             
-            # 清洗数据
-            cleaned_df = self.clean_theme_relation_data(df)
+            total_themes = len(theme_codes)
+            processed_count = 0
+            skipped_count = 0
+            total_inserted = 0
             
-            # 插入数据库
-            self.insert_theme_relation_data(cleaned_df)
+            logger.info(f"共需要处理 {total_themes} 个题材板块")
             
-            logger.info("题材关联数据更新完成")
+            # 逐个处理每个题材板块
+            for i, theme_code in enumerate(theme_codes, 1):
+                try:
+                    logger.info(f"处理第 {i}/{total_themes} 个题材板块: {theme_code}")
+                    
+                    # 检查该题材板块数据是否已存在
+                    if self.check_theme_data_exists(theme_code):
+                        logger.info(f"题材板块 {theme_code} 数据已存在，跳过")
+                        skipped_count += 1
+                        continue
+                    
+                    # 获取该题材板块的成分股数据
+                    df = self.fetch_theme_concept_data(theme_code, trade_date)
+                    
+                    if df.empty:
+                        logger.warning(f"题材板块 {theme_code} 无成分股数据")
+                        continue
+                    
+                    # 清洗数据
+                    cleaned_df = self.clean_theme_relation_data(df)
+                    
+                    if cleaned_df.empty:
+                        logger.warning(f"题材板块 {theme_code} 清洗后无有效数据")
+                        continue
+                    
+                    # 立即插入数据库
+                    self.insert_theme_relation_data(cleaned_df)
+                    
+                    processed_count += 1
+                    total_inserted += len(cleaned_df)
+                    
+                    logger.info(f"题材板块 {theme_code} 处理完成，插入 {len(cleaned_df)} 条记录")
+                    
+                except Exception as e:
+                    logger.error(f"处理题材板块 {theme_code} 失败: {e}")
+                    continue
+            
+            logger.info(f"题材关联数据更新完成")
+            logger.info(f"总计处理: {processed_count} 个板块")
+            logger.info(f"跳过已存在: {skipped_count} 个板块")
+            logger.info(f"总计插入: {total_inserted} 条记录")
             
         except Exception as e:
             logger.error(f"更新题材关联数据失败: {e}")

@@ -134,13 +134,17 @@ class StockConceptRelationCleaner:
     def get_all_concept_codes(self) -> List[str]:
         """
         获取所有概念板块代码
+        使用dc_index接口获取当日最新的概念板块列表
         
         Returns:
             概念板块代码列表
         """
         try:
-            # 获取概念板块基础信息
-            df = self.pro.ths_index(exchange='A', type='N')
+            # 获取最近的交易日期
+            trade_date = self.get_latest_trading_date()
+            
+            # 使用dc_index接口获取概念板块信息
+            df = self.pro.dc_index(trade_date=trade_date)
             if df.empty:
                 logger.warning("未获取到概念板块信息")
                 return []
@@ -153,28 +157,29 @@ class StockConceptRelationCleaner:
             logger.error(f"获取概念板块代码失败: {e}")
             return []
     
-    def fetch_concept_member_data(self) -> pd.DataFrame:
+    def fetch_concept_member_data(self, concept_code: str, trade_date: str) -> pd.DataFrame:
         """
-        从Tushare获取概念板块成分数据
+        从Tushare获取指定概念板块的成分数据
+        
+        Args:
+            concept_code: 概念板块代码
+            trade_date: 交易日期，格式为YYYYMMDD
             
         Returns:
             包含概念板块成分数据的DataFrame
         """
         try:
-            # 获取最近的交易日期
-            trade_date = self.get_latest_trading_date()
-            
-            df = self.pro.dc_member(trade_date=trade_date)
+            df = self.pro.dc_member(trade_date=trade_date, ts_code=concept_code)
             
             if df.empty:
-                logger.warning(f"未获取到概念板块成分数据")
+                logger.warning(f"概念板块 {concept_code} 未获取到成分数据")
                 return pd.DataFrame()
             
-            logger.info(f"成功获取 {len(df)} 条概念板块成分记录")
+            logger.info(f"概念板块 {concept_code} 成功获取 {len(df)} 条成分记录")
             return df
             
         except Exception as e:
-            logger.error(f"获取概念板块成分数据失败: {e}")
+            logger.error(f"获取概念板块 {concept_code} 成分数据失败: {e}")
             return pd.DataFrame()
     
     def clean_concept_relation_data(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -225,6 +230,45 @@ class StockConceptRelationCleaner:
         except Exception as e:
             logger.error(f"数据清洗失败: {e}")
             raise
+    
+    def check_concept_data_exists(self, concept_code: str) -> bool:
+        """
+        检查指定概念板块的数据是否已存在于数据库中
+        
+        Args:
+            concept_code: 概念板块代码
+            
+        Returns:
+            如果数据已存在返回True，否则返回False
+        """
+        connection = None
+        try:
+            connection = self._get_db_connection()
+            cursor = connection.cursor()
+            
+            query = """
+            SELECT COUNT(*) 
+            FROM trade_stock_concept_relation 
+            WHERE concept_sector_code = %s
+            """
+            
+            cursor.execute(query, (concept_code,))
+            result = cursor.fetchone()
+            
+            count = result[0] if result else 0
+            exists = count > 0
+            
+            if exists:
+                logger.info(f"概念板块 {concept_code} 数据已存在，共 {count} 条记录")
+            
+            return exists
+            
+        except Exception as e:
+            logger.error(f"检查概念板块 {concept_code} 数据是否存在失败: {e}")
+            return False
+        finally:
+            if connection:
+                connection.close()
     
     def insert_concept_relation_data(self, df: pd.DataFrame, batch_size: int = 1000):
         """
@@ -284,23 +328,69 @@ class StockConceptRelationCleaner:
     def update_concept_relation_data(self):
         """
         更新概念关联数据的主方法
+        先获取所有概念板块代码，然后逐个获取每个板块的成分股数据并立即入库
         """
         try:
-            logger.info(f"开始更新概念关联数据")
+            logger.info("开始更新概念关联数据")
             
-            # 直接获取概念板块成分数据
-            df = self.fetch_concept_member_data()
+            # 获取最近的交易日期
+            trade_date = self.get_latest_trading_date()
             
-            if df.empty:
+            # 获取所有概念板块代码
+            concept_codes = self.get_all_concept_codes()
+            
+            if not concept_codes:
+                logger.warning("未获取到概念板块代码，退出更新")
                 return
             
-            # 清洗数据
-            cleaned_df = self.clean_concept_relation_data(df)
+            total_concepts = len(concept_codes)
+            processed_count = 0
+            skipped_count = 0
+            total_inserted = 0
             
-            # 插入数据库
-            self.insert_concept_relation_data(cleaned_df)
+            logger.info(f"共需要处理 {total_concepts} 个概念板块")
             
-            logger.info(f"概念关联数据更新完成，共插入 {len(cleaned_df)} 条记录")
+            # 逐个处理每个概念板块
+            for i, concept_code in enumerate(concept_codes, 1):
+                try:
+                    logger.info(f"处理第 {i}/{total_concepts} 个概念板块: {concept_code}")
+                    
+                    # 检查该概念板块数据是否已存在
+                    if self.check_concept_data_exists(concept_code):
+                        logger.info(f"概念板块 {concept_code} 数据已存在，跳过")
+                        skipped_count += 1
+                        continue
+                    
+                    # 获取该概念板块的成分股数据
+                    df = self.fetch_concept_member_data(concept_code, trade_date)
+                    
+                    if df.empty:
+                        logger.warning(f"概念板块 {concept_code} 无成分股数据")
+                        continue
+                    
+                    # 清洗数据
+                    cleaned_df = self.clean_concept_relation_data(df)
+                    
+                    if cleaned_df.empty:
+                        logger.warning(f"概念板块 {concept_code} 清洗后无有效数据")
+                        continue
+                    
+                    # 立即插入数据库
+                    self.insert_concept_relation_data(cleaned_df)
+                    
+                    processed_count += 1
+                    total_inserted += len(cleaned_df)
+                    
+                    logger.info(f"概念板块 {concept_code} 处理完成，插入 {len(cleaned_df)} 条记录")
+                    
+                except Exception as e:
+                    logger.error(f"处理概念板块 {concept_code} 失败: {e}")
+                    continue
+            
+            logger.info(f"概念关联数据更新完成")
+            logger.info(f"总计处理: {processed_count} 个板块")
+            logger.info(f"跳过已存在: {skipped_count} 个板块")
+            logger.info(f"总计插入: {total_inserted} 条记录")
             
         except Exception as e:
             logger.error(f"更新概念关联数据失败: {e}")
@@ -353,7 +443,7 @@ def main():
         # 创建清洗器实例
         cleaner = StockConceptRelationCleaner()
         
-        logger.info("开始获取所有概念板块数据")
+        logger.info("开始更新概念板块关联数据")
         cleaner.update_concept_relation_data()
         
     except Exception as e:
