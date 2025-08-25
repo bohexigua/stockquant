@@ -5,8 +5,8 @@ Data模块
 提供数据获取和处理功能
 """
 
-from .data_loader import DataLoader, DataManager
-from .database_loader import DatabaseLoader
-from .multi_stock_manager import MultiStockDataManager
+from .loader import Loader
+from .stock import StockDataLoader, Stock
+from .theme import ThemeDataLoader
 
-__all__ = ['DataLoader', 'DataManager', 'DatabaseLoader', 'MultiStockDataManager']
+__all__ = ['Loader', 'StockDataLoader', 'Stock', 'ThemeDataLoader']
