@@ -7,9 +7,11 @@ Strategies模块
 
 from .base_strategy import BaseStrategy
 from .sma_strategy import SimpleMovingAverageStrategy, DualMovingAverageStrategy
+from .concept_ranking_strategy import ConceptRankingStrategy
 
 __all__ = [
     'BaseStrategy',
     'SimpleMovingAverageStrategy', 
-    'DualMovingAverageStrategy'
+    'DualMovingAverageStrategy',
+    'ConceptRankingStrategy'
 ]

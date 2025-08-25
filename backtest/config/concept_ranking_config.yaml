@@ -1,0 +1,61 @@
+# 概念板块排名因子策略配置文件
+
+# 回测基础设置
+backtest:
+  start_date: "2025-05-06"  # 回测开始日期
+  end_date: "2025-08-22"    # 回测结束日期
+  cash: 1000000             # 初始资金
+  commission: 0.0003        # 手续费率
+  slippage: 0.001          # 滑点
+
+# 数据库连接配置
+database:
+  host: "localhost"
+  port: 3306
+  user: "root"
+  password: ""
+  database: "QuantDB"
+
+# 数据源配置
+data:
+  stock_limit: 500          # 股票池限制数量
+  min_data_points: 50       # 最少数据点数
+  data_quality_check: true  # 是否进行数据质量检查
+
+# 策略参数
+strategy:
+  params:
+    top_concepts: 3           # 选择前N个概念板块
+    stocks_per_concept: 5     # 每个概念板块选择的股票数
+    rebalance_freq: 1         # 调仓频率（交易日）
+    position_size: 0.95       # 总仓位比例
+    min_volume: 1000000       # 最小成交量过滤
+    debug: true               # 调试模式
+
+# 分析器配置
+analyzers:
+  sharpe_ratio: true        # 夏普比率
+  drawdown: true           # 回撤分析
+  returns: true            # 收益分析
+  trades: true             # 交易分析
+  calmar: true             # Calmar比率
+  sqn: true                # SQN系统质量数
+
+# 输出配置
+output:
+  results_path: "./results/"  # 结果保存路径
+  log_path: "./logs/"         # 日志保存路径
+  save_plots: true           # 是否保存图表
+  plot_format: "png"         # 图表格式
+
+# 风险控制
+risk_control:
+  max_drawdown: 0.2         # 最大回撤限制
+  max_single_loss: 0.05     # 单笔最大亏损
+  position_limit: 0.8       # 总仓位限制
+
+# 性能优化
+performance:
+  parallel_processing: false  # 是否启用并行处理
+  cache_data: true            # 是否缓存数据
+  batch_size: 50              # 批处理大小

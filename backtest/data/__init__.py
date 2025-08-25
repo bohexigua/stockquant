@@ -6,5 +6,7 @@ Data模块
 """
 
 from .data_loader import DataLoader, DataManager
+from .database_loader import DatabaseLoader
+from .multi_stock_manager import MultiStockDataManager
 
-__all__ = ['DataLoader', 'DataManager']
+__all__ = ['DataLoader', 'DataManager', 'DatabaseLoader', 'MultiStockDataManager']
