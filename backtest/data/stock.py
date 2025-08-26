@@ -110,7 +110,7 @@ class Stock(bt.feeds.PandasData):
     
     params = (
         # 必需字段
-        ('datetime', 'datetime'),
+        ('datetime', None),
         ('open', 'open'),
         ('high', 'high'),
         ('low', 'low'),

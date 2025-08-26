@@ -104,15 +104,29 @@ class ThemeDataLoader:
             Dict[str, List[str]]: 题材代码到股票代码列表的映射
         """
         try:
-            # 查询题材股票关联表
-            relation_data = self.loader.load_data('1900-01-01', '2099-12-31', 'trade_stock_theme_relation')
+            # 直接查询题材股票关联表（该表没有trade_date字段）
+            if not self.loader._connect():
+                print("数据库连接失败")
+                return None
+            
+            # 构建SQL查询语句
+            if theme_codes:
+                placeholders = ','.join(['%s'] * len(theme_codes))
+                sql = f"""
+                SELECT theme_sector_code, stock_code 
+                FROM trade_stock_theme_relation 
+                WHERE theme_sector_code IN ({placeholders})
+                """
+                relation_data = pd.read_sql(sql, self.loader.connection, params=theme_codes)
+            else:
+                sql = "SELECT theme_sector_code, stock_code FROM trade_stock_theme_relation"
+                relation_data = pd.read_sql(sql, self.loader.connection)
+            
+            self.loader._disconnect()
+            
             if relation_data is None or relation_data.empty:
                 print("题材股票关联数据加载失败")
                 return None
-            
-            # 如果指定了题材代码，则过滤
-            if theme_codes:
-                relation_data = relation_data[relation_data['theme_sector_code'].isin(theme_codes)]
             
             # 构建题材到股票的映射
             theme_stock_map = {}

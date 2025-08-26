@@ -5,13 +5,8 @@ Strategies模块
 提供各种交易策略
 """
 
-from .base_strategy import BaseStrategy
-from .sma_strategy import SimpleMovingAverageStrategy, DualMovingAverageStrategy
-from .concept_ranking_strategy import ConceptRankingStrategy
+from .theme_hot_stock import ThemeHotStockStrategy
 
 __all__ = [
-    'BaseStrategy',
-    'SimpleMovingAverageStrategy', 
-    'DualMovingAverageStrategy',
-    'ConceptRankingStrategy'
+    'ThemeHotStockStrategy'
 ]

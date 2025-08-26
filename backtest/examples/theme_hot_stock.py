@@ -15,8 +15,13 @@ from datetime import datetime
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from backtest.data.stock import StockDataLoader, Stock
+from backtest.data.trading_calendar import Calendar
 from backtest.strategies.theme_hot_stock import ThemeHotStockStrategy
 
+fromdate = datetime(2025, 8, 1)
+todate = datetime(2025, 8, 23)
+fromdate_str = fromdate.strftime('%Y-%m-%d')
+todate_str = todate.strftime('%Y-%m-%d')
 
 def load_stock_data_by_codes(fromdate, todate):
     """
@@ -48,7 +53,7 @@ def load_stock_data_by_codes(fromdate, todate):
             # 按datetime排序
             stock_data = stock_data.sort_values('datetime')
             # 重置索引
-            stock_data = stock_data.reset_index(drop=True)
+            stock_data = stock_data.set_index('datetime', drop=True)
             stock_data_dict[code] = stock_data
     
     # 打印第一个股票的前五行数据用于调试
@@ -69,13 +74,10 @@ def run_backtest():
     """
     print("开始运行题材热门股票策略回测...")
     
-    # 设置回测参数
-    fromdate = '2025-07-01'
-    todate = '2025-08-22'
     initial_cash = 100000  # 10万初始资金
 
     # 加载股票数据
-    stock_data_dict = load_stock_data_by_codes(fromdate, todate)
+    stock_data_dict = load_stock_data_by_codes(fromdate_str, todate_str)
     
     if not stock_data_dict:
         print("未能加载到股票数据")
@@ -89,14 +91,29 @@ def run_backtest():
     # 添加策略
     cerebro.addstrategy(ThemeHotStockStrategy)
     
+    # 获取回测期间的交易日数量
+    calendar = Calendar()
+    expected_trading_days = calendar.get_trading_days(fromdate_str, todate_str)
+    expected_trading_count = len(expected_trading_days)
+    print(f"回测期间预期交易日数量: {expected_trading_count}")
+    
     # 添加股票数据源
+    added_stocks = 0
     for stock_code, stock_data in stock_data_dict.items():
         if len(stock_data) > 0:
-            # 创建数据源
-            data_feed = Stock(dataname=stock_data)
-            data_feed._name = stock_code  # 设置股票代码标识
-            cerebro.adddata(data_feed)
-            print(f"添加数据源: {stock_code}, 数据量: {len(stock_data)}")
+            # 检查股票实际交易日数量是否满足要求
+            actual_trading_count = len(stock_data)
+            if actual_trading_count >= expected_trading_count:
+                # 创建数据源
+                data_feed = Stock(dataname=stock_data, fromdate=fromdate, todate=todate)
+                data_feed._name = stock_code  # 设置股票代码标识
+                cerebro.adddata(data_feed)
+                added_stocks += 1
+                print(f"添加数据源: {stock_code}, 数据量: {actual_trading_count}")
+            else:
+                print(f"跳过股票 {stock_code}: 数据量不足 ({actual_trading_count} < {expected_trading_count})")
+    
+    print(f"总共添加了 {added_stocks} 只股票作为数据源")
     
     # 设置初始资金
     cerebro.broker.setcash(initial_cash)
@@ -157,5 +174,5 @@ def run_backtest():
 if __name__ == '__main__':
     run_backtest()
     # print("=== 测试股票数据加载 ===")
-    # load_stock_data_by_codes('2025-08-20', '2025-08-22')
+    # load_stock_data_by_codes(fromdate_str, todate_str)
     

@@ -8,5 +8,6 @@ Data模块
 from .loader import Loader
 from .stock import StockDataLoader, Stock
 from .theme import ThemeDataLoader
+from .trading_calendar import Calendar
 
-__all__ = ['Loader', 'StockDataLoader', 'Stock', 'ThemeDataLoader']
+__all__ = ['Loader', 'StockDataLoader', 'Stock', 'ThemeDataLoader', 'Calendar']
