@@ -7,7 +7,8 @@ Data模块
 
 from .loader import Loader
 from .stock import StockDataLoader, Stock
+from .stock_60min import Stock60minDataLoader, Stock60min
 from .theme import ThemeDataLoader
 from .trading_calendar import Calendar
 
-__all__ = ['Loader', 'StockDataLoader', 'Stock', 'ThemeDataLoader', 'Calendar']
+__all__ = ['Loader', 'StockDataLoader', 'Stock', 'Stock60minDataLoader', 'Stock60min', 'ThemeDataLoader', 'Calendar']

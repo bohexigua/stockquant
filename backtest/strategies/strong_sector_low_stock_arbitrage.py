@@ -1,0 +1,290 @@
+import backtrader as bt
+import pandas as pd
+import sys
+import os
+from datetime import datetime, timedelta
+
+# 添加项目根目录到路径
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from backtest.data.theme import ThemeDataLoader
+
+class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
+    """
+    强势板块低位套利（恐高）策略
+    
+    策略逻辑：
+    1. 当日买入前一日热门题材（TOP10）中的人气票（东财TOP100）且流动市值<150亿
+    2. 买入时机要保证相对位置不高（<6%）
+    3. 次日如果竞价量能不及预期（<2%），开盘价卖出
+    4. 次日未封板且0轴以上持续2h横盘（上下波动<3%），则卖出
+    5. 次日尾盘0轴以下，止损卖出
+    """
+    
+    params = (
+        ('top_themes', 10),  # 选择前N个热门题材
+        ('max_market_cap', 15000000000),  # 最大流动市值150亿
+        ('max_rank', 100),  # 人气票排名TOP100
+        ('max_relative_position', 0.06),  # 最大相对位置6%
+        ('min_auction_volume', 0.02),  # 最小竞价量能2%
+        ('sideways_threshold', 0.03),  # 横盘波动阈值3%
+        ('sideways_hours', 2),  # 横盘持续时间2小时
+    )
+    
+    def __init__(self):
+        """
+        初始化策略
+        """
+        self.theme_loader = ThemeDataLoader()
+        
+        # 记录持仓信息和买入时间
+        self.position_dict = {}  # {stock_code: {'buy_date': date, 'buy_price': price, 'sideways_start': None}}
+        
+        # 记录交易信息
+        self.trade_log = []
+        
+        # 缓存前一日的题材和股票数据
+        self.prev_day_themes = None
+        self.prev_day_stocks = {}
+        
+        print(f"强势板块低位套利策略初始化完成，数据源数量: {len(self.datas)}")
+    
+    def log(self, txt, dt=None):
+        """
+        日志记录函数
+        """
+        dt = dt or self.datas[0].datetime.date(0)
+        print(f'{dt.isoformat()}: {txt}')
+    
+    def next(self):
+        """
+        策略主逻辑
+        """
+        current_date = self.datas[0].datetime.date(0)
+        current_time = self.datas[0].datetime.time(0)
+        current_datetime = self.datas[0].datetime.datetime(0)
+        
+        # 处理卖出逻辑（持仓股票的卖出条件检查）
+        self.check_sell_conditions(current_date, current_time)
+        
+        # 买入逻辑：只在每日开盘时执行
+        if current_time.hour == 9 and current_time.minute == 30:
+            self.check_buy_conditions(current_date)
+        
+        # 更新横盘监控
+        self.update_sideways_monitoring(current_datetime)
+    
+    def check_buy_conditions(self, current_date):
+        """
+        检查买入条件
+        使用前一日的题材和股票数据来避免未来函数
+        """
+        try:
+            # 获取前一日的题材数据
+            prev_date = (current_date - timedelta(days=1)).strftime('%Y-%m-%d')
+            
+            # 获取前一日TOP题材
+            top_themes = self.theme_loader.get_top_themes_by_rank(
+                prev_date, 
+                top_n=self.params.top_themes
+            )
+            
+            if top_themes is None or top_themes.empty:
+                return
+            
+            # 获取题材关联的股票
+            theme_codes = top_themes['code'].tolist()
+            theme_stock_map = self.theme_loader.get_theme_related_stocks(theme_codes)
+            
+            if not theme_stock_map:
+                return
+            
+            # 筛选符合条件的股票
+            candidate_stocks = set()
+            for theme_code in theme_codes:
+                if theme_code in theme_stock_map:
+                    candidate_stocks.update(theme_stock_map[theme_code])
+            
+            # 检查每只候选股票的买入条件
+            for data in self.datas:
+                if not hasattr(data, '_name') or data._name not in candidate_stocks:
+                    continue
+                
+                # 检查是否已持仓
+                if self.getposition(data).size > 0:
+                    continue
+                
+                # 检查买入条件
+                if self.should_buy_stock(data, prev_date):
+                    self.execute_buy(data)
+                    
+        except Exception as e:
+            self.log(f'买入条件检查出错: {e}')
+    
+    def should_buy_stock(self, data, prev_date):
+        """
+        检查单只股票是否满足买入条件
+        """
+        try:
+            # 1. 检查人气排名（使用前一日数据）
+            if hasattr(data, 'rank_today') and data.rank_today[0] is not None:
+                if data.rank_today[0] > self.params.max_rank:
+                    return False
+            else:
+                return False  # 没有排名数据的股票不买入
+            
+            # 2. 检查流动市值
+            if hasattr(data, 'circ_mv') and data.circ_mv[0] is not None:
+                if data.circ_mv[0] > self.params.max_market_cap:
+                    return False
+            
+            # 3. 检查相对位置（简化为当前价格相对于近期高点的位置）
+            if len(data.close) >= 20:
+                recent_high = max(data.high.get(ago=-i) for i in range(20))
+                current_price = data.close[0]
+                relative_position = (current_price - min(data.low.get(ago=-i) for i in range(20))) / (recent_high - min(data.low.get(ago=-i) for i in range(20)))
+                
+                if relative_position > self.params.max_relative_position:
+                    return False
+            
+            return True
+            
+        except Exception as e:
+            self.log(f'股票 {data._name} 买入条件检查出错: {e}')
+            return False
+    
+    def execute_buy(self, data):
+        """
+        执行买入操作
+        """
+        try:
+            available_cash = self.broker.getcash()
+            if available_cash > 10000:  # 至少保留1万现金
+                position_size = min(available_cash * 0.1, 50000)  # 每次最多买入5万或可用资金的10%
+                shares = int(position_size / data.close[0] / 100) * 100  # 按手买入
+                
+                if shares > 0:
+                    order = self.buy(data, size=shares)
+                    if order:
+                        # 记录买入信息
+                        self.position_dict[data._name] = {
+                            'buy_date': self.datas[0].datetime.date(0),
+                            'buy_price': data.close[0],
+                            'sideways_start': None
+                        }
+                        self.log(f'买入股票: {data._name}, 股数: {shares}, 价格: {data.close[0]:.2f}')
+                        
+        except Exception as e:
+            self.log(f'买入执行出错: {e}')
+    
+    def check_sell_conditions(self, current_date, current_time):
+        """
+        检查卖出条件
+        """
+        for data in self.datas:
+            if not hasattr(data, '_name') or data._name not in self.position_dict:
+                continue
+                
+            position = self.getposition(data)
+            if position.size <= 0:
+                continue
+            
+            stock_info = self.position_dict[data._name]
+            buy_date = stock_info['buy_date']
+            
+            # 次日卖出逻辑
+            if current_date > buy_date:
+                sell_reason = self.get_sell_reason(data, current_time, stock_info)
+                if sell_reason:
+                    self.close(data)
+                    self.log(f'卖出股票: {data._name}, 原因: {sell_reason}, 价格: {data.close[0]:.2f}')
+                    del self.position_dict[data._name]
+    
+    def get_sell_reason(self, data, current_time, stock_info):
+        """
+        获取卖出原因
+        """
+        try:
+            # 1. 开盘时检查竞价量能
+            if current_time.hour == 9 and current_time.minute == 30:
+                if hasattr(data, 'volume_ratio') and data.volume_ratio[0] is not None:
+                    if data.volume_ratio[0] < self.params.min_auction_volume:
+                        return '竞价量能不足'
+            
+            # 2. 检查是否封板（涨停）
+            if hasattr(data, 'chg_pct') and data.chg_pct[0] is not None:
+                if data.chg_pct[0] >= 9.8:  # 接近涨停
+                    return None  # 封板不卖出
+            
+            # 3. 检查横盘条件（0轴以上持续2小时横盘）
+            if data.chg_pct[0] > 0:  # 0轴以上
+                if self.is_sideways_trading(data, stock_info):
+                    return '0轴以上横盘2小时'
+            
+            # 4. 尾盘0轴以下止损
+            if current_time.hour >= 14 and current_time.minute >= 30:  # 尾盘时间
+                if data.chg_pct[0] < 0:  # 0轴以下
+                    return '尾盘0轴以下止损'
+            
+            return None
+            
+        except Exception as e:
+            self.log(f'卖出条件检查出错: {e}')
+            return None
+    
+    def is_sideways_trading(self, data, stock_info):
+        """
+        检查是否横盘交易
+        """
+        try:
+            current_price = data.close[0]
+            
+            # 检查最近2小时（24个5分钟K线）的价格波动
+            if len(data.close) >= 24:
+                recent_prices = [data.close.get(ago=-i) for i in range(24)]
+                price_range = (max(recent_prices) - min(recent_prices)) / min(recent_prices)
+                
+                if price_range <= self.params.sideways_threshold:
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            self.log(f'横盘检查出错: {e}')
+            return False
+    
+    def update_sideways_monitoring(self, current_datetime):
+        """
+        更新横盘监控
+        """
+        # 这里可以添加更精确的横盘时间监控逻辑
+        pass
+    
+    def notify_order(self, order):
+        """
+        订单状态通知
+        """
+        if order.status in [order.Completed]:
+            if order.isbuy():
+                self.log(f'买入执行: {order.data._name}, 价格: {order.executed.price:.2f}, 数量: {order.executed.size}')
+            else:
+                self.log(f'卖出执行: {order.data._name}, 价格: {order.executed.price:.2f}, 数量: {order.executed.size}')
+        elif order.status in [order.Canceled, order.Margin, order.Rejected]:
+            self.log(f'订单失败: {order.data._name}, 状态: {order.status}')
+    
+    def notify_trade(self, trade):
+        """
+        交易完成通知
+        """
+        if trade.isclosed:
+            pnl = trade.pnl
+            pnl_pct = (trade.pnl / trade.value) * 100 if trade.value != 0 else 0
+            self.log(f'交易完成: {trade.data._name}, 盈亏: {pnl:.2f}, 盈亏率: {pnl_pct:.2f}%')
+            
+            # 记录交易信息
+            self.trade_log.append({
+                'stock': trade.data._name,
+                'pnl': pnl,
+                'pnl_pct': pnl_pct,
+                'value': trade.value
+            })

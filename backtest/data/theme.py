@@ -130,11 +130,14 @@ class ThemeDataLoader:
             
             # 构建题材到股票的映射
             theme_stock_map = {}
+            total_stocks = 0
             for theme_code in relation_data['theme_sector_code'].unique():
                 stocks = relation_data[relation_data['theme_sector_code'] == theme_code]['stock_code'].tolist()
                 theme_stock_map[theme_code] = stocks
+                total_stocks += len(stocks)
+                print(f"题材 {theme_code} 关联了 {len(stocks)} 只股票")
             
-            print(f"获取到{len(theme_stock_map)}个题材的股票关联关系")
+            print(f"获取到{len(theme_stock_map)}个题材的股票关联关系，总计{total_stocks}只股票")
             return theme_stock_map
             
         except Exception as e:

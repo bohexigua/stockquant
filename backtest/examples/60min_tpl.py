@@ -14,18 +14,21 @@ from datetime import datetime
 # 添加项目根目录到路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from backtest.data.stock import StockDataLoader, Stock
+from backtest.data.stock_60min import Stock60minDataLoader, Stock60min
 from backtest.data.trading_calendar import Calendar
 from backtest.strategies.theme_hot_stock import ThemeHotStockStrategy
+from backtest.utils.helpers import BacktestResultSaver
 
-fromdate = datetime(2025, 8, 1)
-todate = datetime(2025, 8, 23)
+fromdate = datetime(2025, 8, 11)
+todate = datetime(2025, 8, 22)
 fromdate_str = fromdate.strftime('%Y-%m-%d')
 todate_str = todate.strftime('%Y-%m-%d')
 
+
+
 def load_stock_data_by_codes(fromdate, todate):
     """
-    根据股票代码列表加载数据
+    根据股票代码列表加载60分钟数据
     
     Args:
         fromdate: 开始日期
@@ -34,10 +37,10 @@ def load_stock_data_by_codes(fromdate, todate):
     Returns:
         dict: 股票代码到DataFrame的映射
     """
-    stock_loader = StockDataLoader()
+    stock_60min_loader = Stock60minDataLoader()
     
-    # 加载所有股票数据
-    all_stock_data = stock_loader.load_merged_stock_data(fromdate, todate)
+    # 加载所有股票60分钟数据
+    all_stock_data = stock_60min_loader.load_merged_stock_60min_data(fromdate, todate)
     if all_stock_data is None:
         return {}
     
@@ -60,7 +63,7 @@ def load_stock_data_by_codes(fromdate, todate):
     if stock_data_dict:
         first_stock_code = list(stock_data_dict.keys())[0]
         first_stock_data = stock_data_dict[first_stock_code]
-        print(f"\n=== {first_stock_code} 股票数据前5行 ===")
+        print(f"\n=== {first_stock_code} 股票60分钟数据前5行 ===")
         print(first_stock_data.head())
         print(f"数据形状: {first_stock_data.shape}")
         print(f"列名: {list(first_stock_data.columns)}")
@@ -104,8 +107,8 @@ def run_backtest():
             # 检查股票实际交易日数量是否满足要求
             actual_trading_count = len(stock_data)
             if actual_trading_count >= expected_trading_count:
-                # 创建数据源
-                data_feed = Stock(dataname=stock_data, fromdate=fromdate, todate=todate)
+                # 创建60分钟数据源
+                data_feed = Stock60min(dataname=stock_data, fromdate=fromdate, todate=todate)
                 data_feed._name = stock_code  # 设置股票代码标识
                 cerebro.adddata(data_feed)
                 added_stocks += 1
@@ -125,7 +128,9 @@ def run_backtest():
     cerebro.addanalyzer(bt.analyzers.SharpeRatio, _name='sharpe')
     cerebro.addanalyzer(bt.analyzers.DrawDown, _name='drawdown')
     cerebro.addanalyzer(bt.analyzers.Returns, _name='returns')
-    
+    cerebro.addanalyzer(bt.analyzers.PyFolio, _name='pyfolio')
+
+
     print(f"回测设置完成，初始资金: {initial_cash:,.0f}")
     print(f"回测期间: {fromdate} 到 {todate}")
     print(f"数据源数量: {len(stock_data_dict)}")
@@ -169,6 +174,26 @@ def run_backtest():
         if total_trades > 0:
             avg_pnl = sum([t['pnl'] for t in strat.trade_log]) / total_trades
             print(f"平均每笔盈亏: {avg_pnl:.2f}")
+    
+    # 使用cerebro内置绘图功能（优化版本）
+    print("\n正在生成回测图表...")
+    portfolio_stats = strat.analyzers.getbyname('pyfolio')
+    returns, positions, transactions, gross_lev = portfolio_stats.get_pf_items()
+    print(f"回测完成，收益数据已生成，共{len(returns)}个交易日")
+    
+    # 使用BacktestResultSaver保存回测结果
+    saver = BacktestResultSaver()
+    result_path = saver.save_complete_results(
+        strategy_name='tpl',
+        cerebro=cerebro,
+        strat=strat,
+        start_date=fromdate_str,
+        end_date=todate_str,
+        initial_cash=initial_cash,
+        returns=returns,
+        positions=positions,
+        transactions=transactions
+    )
 
 
 if __name__ == '__main__':

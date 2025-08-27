@@ -10,474 +10,199 @@ import numpy as np
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Tuple
 from loguru import logger
-import yaml
 import os
 import json
+from pathlib import Path
+import quantstats
+import sys
 
+# 添加项目根目录到路径
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-class ConfigManager:
+from backtest.data.loader import Loader
+
+class BacktestResultSaver:
     """
-    配置管理器
-    负责加载和管理配置文件
-    """
-    
-    def __init__(self, config_path: str = None):
-        """
-        初始化配置管理器
-        
-        Args:
-            config_path: 配置文件路径
-        """
-        if config_path is None:
-            config_path = os.path.join(os.path.dirname(__file__), '../config/config.yaml')
-        
-        self.config_path = config_path
-        self.config = self.load_config()
-        print('config: ', self.config)
-    
-    def load_config(self) -> Dict[str, Any]:
-        """
-        加载配置文件
-        
-        Returns:
-            配置字典
-        """
-        try:
-            with open(self.config_path, 'r', encoding='utf-8') as f:
-                config = yaml.safe_load(f)
-            logger.info(f"配置文件加载成功: {self.config_path}")
-            return config
-        except Exception as e:
-            logger.error(f"配置文件加载失败: {e}")
-            return {}
-    
-    def get(self, key: str, default: Any = None) -> Any:
-        """
-        获取配置值
-        
-        Args:
-            key: 配置键，支持点号分隔的嵌套键
-            default: 默认值
-            
-        Returns:
-            配置值
-        """
-        keys = key.split('.')
-        value = self.config
-        
-        try:
-            for k in keys:
-                value = value[k]
-            return value
-        except (KeyError, TypeError):
-            return default
-    
-    def update(self, key: str, value: Any):
-        """
-        更新配置值
-        
-        Args:
-            key: 配置键
-            value: 新值
-        """
-        keys = key.split('.')
-        config = self.config
-        
-        for k in keys[:-1]:
-            if k not in config:
-                config[k] = {}
-            config = config[k]
-        
-        config[keys[-1]] = value
-    
-    def save_config(self, filepath: str = None):
-        """
-        保存配置到文件
-        
-        Args:
-            filepath: 保存路径，默认为原路径
-        """
-        if filepath is None:
-            filepath = self.config_path
-        
-        try:
-            with open(filepath, 'w', encoding='utf-8') as f:
-                yaml.dump(self.config, f, default_flow_style=False, allow_unicode=True)
-            logger.info(f"配置已保存到: {filepath}")
-        except Exception as e:
-            logger.error(f"保存配置失败: {e}")
-
-
-class PerformanceAnalyzer:
-    """
-    性能分析器
-    提供回测结果的详细分析
+    回测结果保存器
+    用于保存回测的统计明细、图表和交割单
     """
     
-    @staticmethod
-    def calculate_metrics(returns: pd.Series) -> Dict[str, float]:
+    def __init__(self, base_path: str = '/Users/zwldqp/work/stockquant/backtest/returns'):
         """
-        计算性能指标
+        初始化回测结果保存器
         
         Args:
-            returns: 收益率序列
-            
-        Returns:
-            性能指标字典
+            base_path: 结果保存的基础路径
         """
-        if returns.empty:
-            return {}
-        
-        # 基础统计
-        total_return = (1 + returns).prod() - 1
-        annual_return = (1 + returns.mean()) ** 252 - 1
-        volatility = returns.std() * np.sqrt(252)
-        
-        # 夏普比率
-        sharpe_ratio = annual_return / volatility if volatility > 0 else 0
-        
-        # 最大回撤
-        cumulative = (1 + returns).cumprod()
-        running_max = cumulative.expanding().max()
-        drawdown = (cumulative - running_max) / running_max
-        max_drawdown = drawdown.min()
-        
-        # 胜率
-        win_rate = (returns > 0).mean()
-        
-        # 盈亏比
-        positive_returns = returns[returns > 0]
-        negative_returns = returns[returns < 0]
-        
-        avg_win = positive_returns.mean() if len(positive_returns) > 0 else 0
-        avg_loss = abs(negative_returns.mean()) if len(negative_returns) > 0 else 0
-        profit_loss_ratio = avg_win / avg_loss if avg_loss > 0 else 0
-        
-        # Calmar比率
-        calmar_ratio = annual_return / abs(max_drawdown) if max_drawdown < 0 else 0
-        
-        return {
-            'total_return': total_return,
-            'annual_return': annual_return,
-            'volatility': volatility,
-            'sharpe_ratio': sharpe_ratio,
-            'max_drawdown': max_drawdown,
-            'win_rate': win_rate,
-            'profit_loss_ratio': profit_loss_ratio,
-            'calmar_ratio': calmar_ratio,
-            'total_trades': len(returns)
-        }
+        self.base_path = Path(base_path)
+        self.loader = Loader()
+        self.base_path.mkdir(parents=True, exist_ok=True)
     
-    @staticmethod
-    def generate_report(analysis: Dict[str, Any]) -> str:
+    def get_stock_names(self, stock_codes: List[str], start_date: str, end_date: str) -> Dict[str, str]:
         """
-        生成性能报告
+        从数据库获取股票名称
         
         Args:
-            analysis: 分析结果
-            
-        Returns:
-            格式化的报告字符串
-        """
-        report = "\n" + "="*50 + "\n"
-        report += "           回测性能报告\n"
-        report += "="*50 + "\n"
-        
-        # 基础信息
-        if 'returns' in analysis:
-            metrics = PerformanceAnalyzer.calculate_metrics(analysis['returns'])
-            
-            report += f"总收益率:     {metrics.get('total_return', 0):.2%}\n"
-            report += f"年化收益率:   {metrics.get('annual_return', 0):.2%}\n"
-            report += f"年化波动率:   {metrics.get('volatility', 0):.2%}\n"
-            report += f"夏普比率:     {metrics.get('sharpe_ratio', 0):.2f}\n"
-            report += f"最大回撤:     {metrics.get('max_drawdown', 0):.2%}\n"
-            report += f"胜率:         {metrics.get('win_rate', 0):.2%}\n"
-            report += f"盈亏比:       {metrics.get('profit_loss_ratio', 0):.2f}\n"
-            report += f"Calmar比率:   {metrics.get('calmar_ratio', 0):.2f}\n"
-            report += f"总交易次数:   {metrics.get('total_trades', 0)}\n"
-        
-        # 交易分析
-        if 'trades' in analysis:
-            trades = analysis['trades']
-            report += "\n" + "-"*30 + "\n"
-            report += "交易分析\n"
-            report += "-"*30 + "\n"
-            
-            total_trades = trades.get('total', {}).get('total', 0)
-            won_trades = trades.get('won', {}).get('total', 0)
-            lost_trades = trades.get('lost', {}).get('total', 0)
-            
-            report += f"总交易数:     {total_trades}\n"
-            report += f"盈利交易:     {won_trades}\n"
-            report += f"亏损交易:     {lost_trades}\n"
-            
-            if total_trades > 0:
-                win_rate = won_trades / total_trades
-                report += f"胜率:         {win_rate:.2%}\n"
-        
-        report += "="*50 + "\n"
-        return report
-
-
-class DateTimeHelper:
-    """
-    日期时间辅助类
-    """
-    
-    @staticmethod
-    def parse_date(date_str: str) -> datetime:
-        """
-        解析日期字符串
-        
-        Args:
-            date_str: 日期字符串
-            
-        Returns:
-            datetime对象
-        """
-        formats = ['%Y-%m-%d', '%Y/%m/%d', '%d/%m/%Y', '%d-%m-%Y']
-        
-        for fmt in formats:
-            try:
-                return datetime.strptime(date_str, fmt)
-            except ValueError:
-                continue
-        
-        raise ValueError(f"无法解析日期: {date_str}")
-    
-    @staticmethod
-    def get_trading_days(start_date: str, end_date: str) -> List[datetime]:
-        """
-        获取交易日列表（排除周末）
-        
-        Args:
+            stock_codes: 股票代码列表
             start_date: 开始日期
             end_date: 结束日期
             
         Returns:
-            交易日列表
-        """
-        start = DateTimeHelper.parse_date(start_date)
-        end = DateTimeHelper.parse_date(end_date)
-        
-        trading_days = []
-        current = start
-        
-        while current <= end:
-            # 排除周末（周六=5，周日=6）
-            if current.weekday() < 5:
-                trading_days.append(current)
-            current += timedelta(days=1)
-        
-        return trading_days
-    
-    @staticmethod
-    def format_duration(seconds: float) -> str:
-        """
-        格式化时间间隔
-        
-        Args:
-            seconds: 秒数
-            
-        Returns:
-            格式化的时间字符串
-        """
-        if seconds < 60:
-            return f"{seconds:.1f}秒"
-        elif seconds < 3600:
-            return f"{seconds/60:.1f}分钟"
-        else:
-            return f"{seconds/3600:.1f}小时"
-
-
-class FileHelper:
-    """
-    文件操作辅助类
-    """
-    
-    @staticmethod
-    def ensure_dir(filepath: str):
-        """
-        确保目录存在
-        
-        Args:
-            filepath: 文件路径
-        """
-        directory = os.path.dirname(filepath)
-        if directory and not os.path.exists(directory):
-            os.makedirs(directory, exist_ok=True)
-    
-    @staticmethod
-    def save_json(data: Dict[str, Any], filepath: str):
-        """
-        保存JSON文件
-        
-        Args:
-            data: 要保存的数据
-            filepath: 文件路径
-        """
-        FileHelper.ensure_dir(filepath)
-        
-        try:
-            with open(filepath, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=2, default=str)
-            logger.info(f"JSON文件保存成功: {filepath}")
-        except Exception as e:
-            logger.error(f"保存JSON文件失败: {e}")
-    
-    @staticmethod
-    def load_json(filepath: str) -> Dict[str, Any]:
-        """
-        加载JSON文件
-        
-        Args:
-            filepath: 文件路径
-            
-        Returns:
-            JSON数据
+            股票代码到名称的映射字典
         """
         try:
-            with open(filepath, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            logger.info(f"JSON文件加载成功: {filepath}")
-            return data
-        except Exception as e:
-            logger.error(f"加载JSON文件失败: {e}")
-            return {}
-    
-    @staticmethod
-    def get_file_size(filepath: str) -> str:
-        """
-        获取文件大小
-        
-        Args:
-            filepath: 文件路径
+            # 使用loader从trade_market_stock_basic_daily表获取股票基本信息
+            df = self.loader.load_data(start_date, end_date, 'trade_market_stock_basic_daily')
             
-        Returns:
-            格式化的文件大小
-        """
-        try:
-            size = os.path.getsize(filepath)
-            
-            if size < 1024:
-                return f"{size}B"
-            elif size < 1024 * 1024:
-                return f"{size/1024:.1f}KB"
-            elif size < 1024 * 1024 * 1024:
-                return f"{size/(1024*1024):.1f}MB"
+            if df is not None and not df.empty:
+                # 筛选指定的股票代码
+                filtered_df = df[df['code'].isin(stock_codes)]
+                
+                # 创建代码到名称的映射，去重并取最新的名称
+                stock_names = {}
+                for code in stock_codes:
+                    code_df = filtered_df[filtered_df['code'] == code]
+                    if not code_df.empty:
+                        # 取最新日期的股票名称
+                        latest_name = code_df.sort_values('datetime', ascending=False)['name'].iloc[0]
+                        stock_names[code] = latest_name
+                    else:
+                        stock_names[code] = '未知'
+                
+                return stock_names
             else:
-                return f"{size/(1024*1024*1024):.1f}GB"
-        except Exception:
-            return "未知"
-
-
-class LoggerSetup:
-    """
-    日志设置类
-    """
+                # 如果查询失败，返回默认映射
+                return {code: '未知' for code in stock_codes}
+                
+        except Exception as e:
+            print(f"获取股票名称失败: {e}")
+            return {code: '未知' for code in stock_codes}
     
-    @staticmethod
-    def setup_logger(log_level: str = 'INFO', log_file: str = None):
+    def create_result_folder(self, strategy_name: str) -> Path:
         """
-        设置日志配置
+        为策略创建结果文件夹
         
         Args:
-            log_level: 日志级别
-            log_file: 日志文件路径
-        """
-        # 移除默认处理器
-        logger.remove()
-        
-        # 添加控制台处理器
-        logger.add(
-            sink=lambda msg: print(msg, end=''),
-            level=log_level,
-            format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
-                   "<level>{level: <8}</level> | "
-                   "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
-                   "<level>{message}</level>"
-        )
-        
-        # 添加文件处理器
-        if log_file:
-            FileHelper.ensure_dir(log_file)
-            logger.add(
-                sink=log_file,
-                level=log_level,
-                format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
-                rotation="10 MB",
-                retention="30 days"
-            )
-        
-        logger.info(f"日志系统初始化完成，级别: {log_level}")
-
-
-class ValidationHelper:
-    """
-    数据验证辅助类
-    """
-    
-    @staticmethod
-    def validate_config(config: Dict[str, Any]) -> Tuple[bool, List[str]]:
-        """
-        验证配置文件
-        
-        Args:
-            config: 配置字典
+            strategy_name: 策略名称
             
         Returns:
-            (是否有效, 错误信息列表)
+            结果文件夹路径
         """
-        errors = []
-        
-        # 检查必要的配置项
-        required_sections = ['backtest', 'data', 'strategy']
-        for section in required_sections:
-            if section not in config:
-                errors.append(f"缺少必要配置节: {section}")
-        
-        # 检查回测配置
-        if 'backtest' in config:
-            backtest_config = config['backtest']
-            
-            if 'cash' not in backtest_config:
-                errors.append("缺少初始资金配置")
-            elif not isinstance(backtest_config['cash'], (int, float)) or backtest_config['cash'] <= 0:
-                errors.append("初始资金必须为正数")
-            
-            if 'start_date' not in backtest_config:
-                errors.append("缺少开始日期配置")
-            
-            if 'end_date' not in backtest_config:
-                errors.append("缺少结束日期配置")
-        
-        # 检查数据配置
-        if 'data' in config:
-            data_config = config['data']
-            
-            if 'symbols' not in data_config:
-                errors.append("缺少股票代码配置")
-            elif not isinstance(data_config['symbols'], list) or len(data_config['symbols']) == 0:
-                errors.append("股票代码必须为非空列表")
-        
-        return len(errors) == 0, errors
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        folder_name = f"{strategy_name}_{timestamp}"
+        result_path = self.base_path / folder_name
+        result_path.mkdir(parents=True, exist_ok=True)
+        return result_path
     
-    @staticmethod
-    def validate_date_range(start_date: str, end_date: str) -> bool:
+    def save_backtest_results(self, result_path: Path, strategy_name: str, cerebro, strat, 
+                             start_date: str, end_date: str, initial_cash: float,
+                             returns: pd.Series = None, transactions: pd.DataFrame = None):
         """
-        验证日期范围
+        保存回测结果到指定文件夹
         
         Args:
+            result_path: 结果保存路径
+            strategy_name: 策略名称
+            strat: 策略对象
             start_date: 开始日期
             end_date: 结束日期
+            initial_cash: 初始资金
+            returns: 收益率序列
+            transactions: 交易记录
+        """
+        # 1. 保存统计明细
+        final_value = float(cerebro.broker.getvalue())
+        
+        stats = {
+            'strategy_name': strategy_name,
+            'start_date': start_date,
+            'end_date': end_date,
+            'initial_cash': initial_cash,
+            'final_value': final_value,
+            'total_return': (final_value - initial_cash),
+            'return_pct': ((final_value - initial_cash) / initial_cash) * 100 if initial_cash > 0 else 0,
+            'total_trades': len(strat.trade_log) if strat is not None and hasattr(strat, 'trade_log') else 0,
+            'winning_trades': len([t for t in strat.trade_log if t['pnl'] > 0]) if strat is not None and hasattr(strat, 'trade_log') else 0,
+            'win_rate': (len([t for t in strat.trade_log if t['pnl'] > 0]) / len(strat.trade_log) * 100) if strat is not None and hasattr(strat, 'trade_log') and strat.trade_log else 0,
+            'avg_pnl': sum([t['pnl'] for t in strat.trade_log]) / len(strat.trade_log) if strat is not None and hasattr(strat, 'trade_log') and strat.trade_log else 0
+        }
+        
+        with open(result_path / 'statistics.json', 'w', encoding='utf-8') as f:
+            json.dump(stats, f, ensure_ascii=False, indent=2)
+        
+        # 3. 保存收益数据
+        if returns is not None and len(returns) > 0:
+            returns.to_csv(result_path / 'returns.csv', encoding='utf-8-sig')
+        
+        # 5. 保存交易记录（包含股票名称）
+        if transactions is not None and len(transactions) > 0:
+            transactions_copy = transactions.copy()
             
-        Returns:
-            日期范围是否有效
+            # 从数据库获取股票名称
+            if 'symbol' in transactions_copy.columns:
+                stock_codes = transactions_copy['symbol'].unique().tolist()
+                stock_names = self.get_stock_names(stock_codes, start_date, end_date)
+                
+                # 添加股票名称映射
+                transactions_copy['stock_name'] = transactions_copy['symbol'].map(stock_names).fillna('未知')
+            
+            transactions_copy.to_csv(result_path / 'transactions.csv', encoding='utf-8-sig')
+        
+        logger.info(f"回测结果已保存到: {result_path}")
+        return result_path
+    
+    def save_charts(self, result_path: Path, returns: pd.Series, strategy_name: str = 'Strategy'):
+        """
+        保存图表
+        
+        Args:
+            result_path: 结果保存路径
+            returns: 收益率序列
+            strategy_name: 策略名称
         """
         try:
-            start = DateTimeHelper.parse_date(start_date)
-            end = DateTimeHelper.parse_date(end_date)
-            return start < end
-        except Exception:
-            return False
+            # 保存性能快照图
+            snapshot_path = result_path / 'performance_snapshot.png'
+            quantstats.plots.snapshot(returns, title=f'{strategy_name} Performance', 
+                                    show=False, savefig=str(snapshot_path))
+            logger.info(f"性能快照图已保存: {snapshot_path}")
+            
+            # 生成并保存quantstats HTML报告
+            html_path = result_path / 'quantstats_report.html'
+            quantstats.reports.html(returns, output=str(html_path), title=f'{strategy_name} Strategy')
+            logger.info(f"quantstats报告已保存: {html_path}")
+            
+        except Exception as e:
+            logger.error(f"生成图表时出错: {e}")
+            logger.info(f"请查看保存的结果文件夹: {result_path}")
+    
+    def save_complete_results(self, strategy_name: str, cerebro, strat, start_date: str, end_date: str, 
+                             initial_cash: float, returns: pd.Series = None, 
+                             transactions: pd.DataFrame = None) -> Path:
+        """
+        保存完整的回测结果（包括数据和图表）
+        
+        Args:
+            strategy_name: 策略名称
+            strat: 策略对象
+            start_date: 开始日期
+            end_date: 结束日期
+            initial_cash: 初始资金
+            returns: 收益率序列
+            transactions: 交易记录
+            
+        Returns:
+            结果保存路径
+        """
+        # 创建结果文件夹
+        result_path = self.create_result_folder(strategy_name)
+        
+        # 保存回测结果
+        self.save_backtest_results(result_path, strategy_name, cerebro, strat, start_date, end_date, initial_cash,
+                                 returns, transactions)
+        
+        # 保存图表
+        if returns is not None:
+            self.save_charts(result_path, returns, strategy_name)
+        
+        return result_path
