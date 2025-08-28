@@ -19,7 +19,7 @@ from backtest.data.trading_calendar import Calendar
 from backtest.strategies.strong_sector_low_stock_arbitrage import StrongSectorLowStockArbitrageStrategy
 from backtest.utils.helpers import BacktestResultSaver
 
-fromdate = datetime(2025, 8, 20)
+fromdate = datetime(2025, 8, 18)
 todate = datetime(2025, 8, 22)
 fromdate_str = fromdate.strftime('%Y-%m-%d')
 todate_str = todate.strftime('%Y-%m-%d')
@@ -97,7 +97,8 @@ def run_backtest():
     # 获取回测期间的交易日数量
     calendar = Calendar()
     expected_trading_days = calendar.get_trading_days(fromdate_str, todate_str)
-    expected_trading_count = len(expected_trading_days)
+    # 每天 5 个 60 分钟 K 线
+    expected_trading_count = len(expected_trading_days) * 5
     print(f"回测期间预期交易日数量: {expected_trading_count}")
     
     # 添加股票数据源

@@ -227,7 +227,7 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
                     return '0轴以上横盘2小时'
             
             # 4. 尾盘0轴以下止损
-            if current_time.hour >= 14 and current_time.minute >= 30:  # 尾盘时间
+            if current_time.hour == 14 and current_time.minute == 00:  # 临近尾盘时间
                 if chg_pct < 0:  # 0轴以下
                     return '尾盘0轴以下止损'
             
