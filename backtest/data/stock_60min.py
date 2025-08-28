@@ -59,6 +59,12 @@ class Stock60minDataLoader:
                 print("个股因子数据加载失败")
                 return None
             
+            # 加载个股竞价数据
+            auction_data = self.loader.load_data(fromdate, todate, 'trade_market_stock_auction_daily')
+            if auction_data is None or auction_data.empty:
+                print("个股竞价数据加载失败")
+                return None
+            
             # 处理60分钟数据的datetime字段
             # 将trade_date和trade_time正确组合为完整的datetime
             if 'trade_time' in min60_data.columns:
@@ -70,13 +76,30 @@ class Stock60minDataLoader:
             min60_data['date'] = pd.to_datetime(min60_data['datetime']).dt.date
             basic_data['date'] = pd.to_datetime(basic_data['datetime']).dt.date
             factor_data['date'] = pd.to_datetime(factor_data['datetime']).dt.date
+            auction_data['date'] = pd.to_datetime(auction_data['datetime']).dt.date
+            
             
             # 特殊处理merge：将日级别数据复制到对应的60分钟数据上
             # 首先合并基本指标数据
             merged_data = self._merge_daily_to_60min(min60_data, basic_data, ['date', 'code'])
             
             # 再合并因子数据
-            final_data = self._merge_daily_to_60min(merged_data, factor_data, ['date', 'code'])
+            merged_data = self._merge_daily_to_60min(merged_data, factor_data, ['date', 'code'])
+            
+            
+            # 处理竞价数据字段重命名（避免与其他表字段冲突）
+            auction_data = auction_data.rename(columns={
+                'vol': 'auction_vol',
+                'price': 'auction_price', 
+                'amount': 'auction_amount',
+                'pre_close': 'auction_pre_close',
+                'turnover_rate': 'auction_turnover_rate',
+                'volume_ratio': 'auction_volume_ratio',
+                'float_share': 'auction_float_share'
+            })
+            
+            # 最后合并竞价数据
+            final_data = self._merge_daily_to_60min(merged_data, auction_data, ['date', 'code'])
             
             # 删除临时的date列
             final_data = final_data.drop('date', axis=1)
@@ -163,14 +186,11 @@ class Stock60min(bt.feeds.PandasData):
         ('volume', 'vol'),
         ('openinterest', -1),
         
-        # 基本信息字段
+        # 基本信息字段（来自60分钟行情表）
         ('code', 'code'),
         ('name', 'name'),
         
-        # 价格相关字段
-        ('pre_close', 'pre_close'),
-        ('chg_val', 'chg_val'),
-        ('chg_pct', 'chg_pct'),
+        # 价格相关字段（来自60分钟行情表）
         ('amount', 'amount'),
         
         # 基本指标字段（来自日级别数据）
@@ -221,7 +241,17 @@ class Stock60min(bt.feeds.PandasData):
         ('rank_surge_5d', 'rank_surge_5d'),
         
         # 因子字段 - 竞价因子（来自日级别数据）
+        # 买卖盘换手率
         ('bid_ask_turnover_rate', 'bid_ask_turnover_rate'),
+        
+        # 竞价数据字段（来自竞价表）
+        ('auction_vol', 'auction_vol'),
+        ('auction_price', 'auction_price'),
+        ('auction_amount', 'auction_amount'),
+        ('auction_pre_close', 'auction_pre_close'),
+        ('auction_turnover_rate', 'auction_turnover_rate'),
+        ('auction_volume_ratio', 'auction_volume_ratio'),
+        ('auction_float_share', 'auction_float_share'),
     )
 
 

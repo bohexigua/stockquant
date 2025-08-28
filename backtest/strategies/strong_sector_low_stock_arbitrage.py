@@ -23,7 +23,7 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
     
     params = (
         ('top_themes', 10),  # 选择前N个热门题材
-        ('max_market_cap', 15000000000),  # 最大流动市值150亿
+        ('max_market_cap', 1500000),  # 最大流动市值150亿
         ('max_rank', 100),  # 人气票排名TOP100
         ('max_relative_position', 0.06),  # 最大相对位置6%
         ('min_auction_volume', 0.02),  # 最小竞价量能2%
@@ -127,24 +127,23 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
         """
         try:
             # 1. 检查人气排名（使用前一日数据）
-            if hasattr(data, 'rank_today') and data.rank_today[0] is not None:
-                if data.rank_today[0] > self.params.max_rank:
+            if hasattr(data, 'rank_today') and data.rank_today[-1] is not None:
+                if data.rank_today[-1] > self.params.max_rank:
                     return False
             else:
                 return False  # 没有排名数据的股票不买入
             
             # 2. 检查流动市值
-            if hasattr(data, 'circ_mv') and data.circ_mv[0] is not None:
-                if data.circ_mv[0] > self.params.max_market_cap:
+            if hasattr(data, 'circ_mv') and data.circ_mv[-1] is not None:
+                if data.circ_mv[-1] > self.params.max_market_cap:
                     return False
             
-            # 3. 检查相对位置（简化为当前价格相对于近期高点的位置）
-            if len(data.close) >= 20:
-                recent_high = max(data.high.get(ago=-i) for i in range(20))
-                current_price = data.close[0]
-                relative_position = (current_price - min(data.low.get(ago=-i) for i in range(20))) / (recent_high - min(data.low.get(ago=-i) for i in range(20)))
-                
-                if relative_position > self.params.max_relative_position:
+            # 3. 检查当前开盘价相对于昨日收盘价的涨幅（不超过6%）
+            if hasattr(data, 'auction_pre_close') and data.auction_pre_close[0] > 0:
+                current_price = data.open[0]
+                prev_close = data.auction_pre_close[0]
+                daily_change_pct = (current_price - prev_close) / prev_close
+                if daily_change_pct > 0.06:  # 相对昨日收盘价涨幅超过6%则不买入
                     return False
             
             return True
@@ -207,23 +206,29 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
         try:
             # 1. 开盘时检查竞价量能
             if current_time.hour == 9 and current_time.minute == 30:
-                if hasattr(data, 'volume_ratio') and data.volume_ratio[0] is not None:
-                    if data.volume_ratio[0] < self.params.min_auction_volume:
+                if hasattr(data, 'auction_volume_ratio') and data.auction_volume_ratio[0] is not None:
+                    if data.auction_volume_ratio[0] < self.params.min_auction_volume:
                         return '竞价量能不足'
             
+            # 计算当前涨跌幅（基于当前开盘价和昨日收盘价）
+            current_price = data.open[0]
+            chg_pct = 0
+            if hasattr(data, 'auction_pre_close') and data.auction_pre_close[0] > 0:
+                prev_close = data.auction_pre_close[0]
+                chg_pct = (current_price - prev_close) / prev_close * 100
+            
             # 2. 检查是否封板（涨停）
-            if hasattr(data, 'chg_pct') and data.chg_pct[0] is not None:
-                if data.chg_pct[0] >= 9.8:  # 接近涨停
-                    return None  # 封板不卖出
+            if chg_pct >= 9.8:  # 接近涨停
+                return None  # 封板不卖出
             
             # 3. 检查横盘条件（0轴以上持续2小时横盘）
-            if data.chg_pct[0] > 0:  # 0轴以上
+            if chg_pct > 0:  # 0轴以上
                 if self.is_sideways_trading(data, stock_info):
                     return '0轴以上横盘2小时'
             
             # 4. 尾盘0轴以下止损
             if current_time.hour >= 14 and current_time.minute >= 30:  # 尾盘时间
-                if data.chg_pct[0] < 0:  # 0轴以下
+                if chg_pct < 0:  # 0轴以下
                     return '尾盘0轴以下止损'
             
             return None
@@ -239,9 +244,9 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
         try:
             current_price = data.close[0]
             
-            # 检查最近2小时（24个5分钟K线）的价格波动
-            if len(data.close) >= 24:
-                recent_prices = [data.close.get(ago=-i) for i in range(24)]
+            # 检查最近2小时（2个60分钟K线）的价格波动
+            if len(data.close) >= 2:
+                recent_prices = [data.close.get(ago=-i) for i in range(2)]
                 price_range = (max(recent_prices) - min(recent_prices)) / min(recent_prices)
                 
                 if price_range <= self.params.sideways_threshold:
