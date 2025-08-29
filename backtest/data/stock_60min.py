@@ -175,6 +175,11 @@ class Stock60min(bt.feeds.PandasData):
     股票60分钟数据源类
     继承自backtrader的PandasData，定义股票60分钟数据的字段映射
     """
+    # 定义60分钟数据的字段映射
+    lines = (
+        'rank_today', 'market_cap', 'auction_pre_close', 'circ_mv', 'auction_volume_ratio'
+    )
+
     
     params = (
         # 必需字段

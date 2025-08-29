@@ -19,7 +19,7 @@ from backtest.data.trading_calendar import Calendar
 from backtest.strategies.strong_sector_low_stock_arbitrage import StrongSectorLowStockArbitrageStrategy
 from backtest.utils.helpers import BacktestResultSaver
 
-fromdate = datetime(2025, 8, 18)
+fromdate = datetime(2025, 8, 1)
 todate = datetime(2025, 8, 22)
 fromdate_str = fromdate.strftime('%Y-%m-%d')
 todate_str = todate.strftime('%Y-%m-%d')

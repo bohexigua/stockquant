@@ -107,6 +107,18 @@ class Stock(bt.feeds.PandasData):
     股票数据源类
     继承自backtrader的PandasData，定义股票数据的字段映射
     """
+
+    lines = (
+        'amount',
+        'pre_close', 'chg_val', 'chg_pct',
+        'turnover_rate', 'turnover_rate_f', 'volume_ratio', 'pe', 'pe_ttm', 'pb',
+        'total_share', 'float_share', 'free_share', 'total_mv', 'circ_mv',
+        'turnover_rate_today', 'turnover_rate_5d_avg', 'turnover_rate_10d_avg', 'turnover_rate_20d_avg',
+        'volume_surge_today', 'volume_surge_5d', 'avg_return_5d', 'avg_return_10d', 'avg_return_20d',
+        'pullback_ma5_days', 'divergence_today', 'market_cap', 'volume_price_divergence_60min',
+        'rank_today', 'rank_5d_avg', 'rank_10d_avg', 'rank_surge_today', 'rank_surge_5d',
+        'bid_ask_turnover_rate'
+    )
     
     params = (
         # 必需字段

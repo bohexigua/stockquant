@@ -82,7 +82,7 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
         try:
             # 获取前一日的题材数据
             prev_date = (current_date - timedelta(days=1)).strftime('%Y-%m-%d')
-            
+
             # 获取前一日TOP题材
             top_themes = self.theme_loader.get_top_themes_by_rank(
                 prev_date, 
@@ -115,13 +115,13 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
                     continue
                 
                 # 检查买入条件
-                if self.should_buy_stock(data, prev_date):
+                if self.should_buy_stock(data):
                     self.execute_buy(data)
                     
         except Exception as e:
             self.log(f'买入条件检查出错: {e}')
     
-    def should_buy_stock(self, data, prev_date):
+    def should_buy_stock(self, data):
         """
         检查单只股票是否满足买入条件
         """
@@ -160,7 +160,7 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
             available_cash = self.broker.getcash()
             if available_cash > 10000:  # 至少保留1万现金
                 position_size = min(available_cash * 0.1, 50000)  # 每次最多买入5万或可用资金的10%
-                shares = int(position_size / data.close[0] / 100) * 100  # 按手买入
+                shares = int(position_size / data.open[0] / 100) * 100  # 按手买入
                 
                 if shares > 0:
                     order = self.buy(data, size=shares)
@@ -168,10 +168,10 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
                         # 记录买入信息
                         self.position_dict[data._name] = {
                             'buy_date': self.datas[0].datetime.date(0),
-                            'buy_price': data.close[0],
+                            'buy_price': data.open[0],
                             'sideways_start': None
                         }
-                        self.log(f'买入股票: {data._name}, 股数: {shares}, 价格: {data.close[0]:.2f}')
+                        self.log(f'买入股票: {data._name}, 股数: {shares}, 价格: {data.open[0]:.2f}')
                         
         except Exception as e:
             self.log(f'买入执行出错: {e}')

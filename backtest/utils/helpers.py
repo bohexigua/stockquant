@@ -167,11 +167,6 @@ class BacktestResultSaver:
                                     show=False, savefig=str(snapshot_path))
             logger.info(f"性能快照图已保存: {snapshot_path}")
             
-            # 生成并保存quantstats HTML报告
-            html_path = result_path / 'quantstats_report.html'
-            quantstats.reports.html(returns, output=str(html_path), title=f'{strategy_name} Strategy')
-            logger.info(f"quantstats报告已保存: {html_path}")
-            
         except Exception as e:
             logger.error(f"生成图表时出错: {e}")
             logger.info(f"请查看保存的结果文件夹: {result_path}")
