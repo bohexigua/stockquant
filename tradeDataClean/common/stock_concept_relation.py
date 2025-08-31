@@ -20,10 +20,19 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 sys.path.insert(0, project_root)
 from config import config, DatabaseConfig
 
-# 配置日志
+# 创建logs目录
+logs_dir = os.path.join(project_root, 'logs')
+os.makedirs(logs_dir, exist_ok=True)
+
+# 配置日志 - 输出到文件和控制台
+log_filename = os.path.join(logs_dir, f'stock_concept_relation_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_filename, encoding='utf-8'),
+        logging.StreamHandler(sys.stdout)
+    ]
 )
 logger = logging.getLogger(__name__)
 
@@ -356,10 +365,10 @@ class StockConceptRelationCleaner:
                     logger.info(f"处理第 {i}/{total_concepts} 个概念板块: {concept_code}")
                     
                     # 检查该概念板块数据是否已存在
-                    if self.check_concept_data_exists(concept_code):
-                        logger.info(f"概念板块 {concept_code} 数据已存在，跳过")
-                        skipped_count += 1
-                        continue
+                    # if self.check_concept_data_exists(concept_code):
+                    #     logger.info(f"概念板块 {concept_code} 数据已存在，跳过")
+                    #     skipped_count += 1
+                    #     continue
                     
                     # 获取该概念板块的成分股数据
                     df = self.fetch_concept_member_data(concept_code, trade_date)

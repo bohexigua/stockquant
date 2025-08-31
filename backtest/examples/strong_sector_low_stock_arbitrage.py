@@ -97,13 +97,22 @@ def run_backtest():
     cerebro = bt.Cerebro(optreturn=False)
 
     # 添加策略优化
+    # cerebro.optstrategy(
+    #     StrongSectorLowStockArbitrageStrategy,
+    #     max_rank=[30, 50],
+    #     market_cap_range=[(200 * 10000, 1000 * 10000), (0 * 10000, 200 * 10000)],
+    #     top_themes=[1, 3, 5],
+    #     min_turnover_rate=[15.0, 25.0, 30.0],
+    #     min_volume_ratio=[0.7, 1.0],
+    # )
+
     cerebro.optstrategy(
         StrongSectorLowStockArbitrageStrategy,
-        max_rank=[30, 50],
-        # market_cap_range=[(200 * 10000, 1000 * 10000), (0 * 10000, 200 * 10000)],
-        # top_themes=[1, 3, 5],
-        # min_turnover_rate=[15.0, 25.0, 30.0],
-        # min_volume_ratio=[0.7, 1.0],
+        max_rank=[50],
+        market_cap_range=[(200 * 10000, 1000 * 10000)],
+        top_themes=[1],
+        min_turnover_rate=[30.0],
+        min_volume_ratio=[0.7],
     )
 
     # 获取回测期间的交易日数量
@@ -177,11 +186,13 @@ def run_backtest():
         sharpe_ratio = (
             sharpe_analysis.get("sharperatio", 0.0) if sharpe_analysis else 0.0
         )
-        
+
         # 获取最大回撤
         drawdown_analysis = strat.analyzers.drawdown.get_analysis()
         max_drawdown = (
-            drawdown_analysis.get("max", {}).get("drawdown", 0.0) if drawdown_analysis else 0.0
+            drawdown_analysis.get("max", {}).get("drawdown", 0.0)
+            if drawdown_analysis
+            else 0.0
         )
 
         # 从策略结果获取参数
@@ -192,31 +203,29 @@ def run_backtest():
         min_turnover_rate = params.get("min_turnover_rate", "N/A")
         min_volume_ratio = params.get("min_volume_ratio", "N/A")
 
-        print(
-            f"参数组合 {i+1}: max_rank={max_rank}, market_cap_range={market_cap_range}, top_themes={top_themes}, min_turnover_rate={min_turnover_rate}, min_volume_ratio={min_volume_ratio}, 收益率={return_pct:.2f}%, 夏普比率={sharpe_ratio:.4f}, 最大回撤={max_drawdown:.2f}%, 最终资金={final_value:,.0f}"
-        )
+        try:
+            print(
+                f"参数组合 {i+1}: max_rank={max_rank}, market_cap_range={market_cap_range}, top_themes={top_themes}, min_turnover_rate={min_turnover_rate}, min_volume_ratio={min_volume_ratio}, 收益率={return_pct:.2f}%, 夏普比率={sharpe_ratio:.4f}, 最大回撤={max_drawdown:.2f}%, 最终资金={final_value:,.0f}"
+            )
 
-        if return_pct > best_return:
-            best_return = return_pct
-            best_result = result
+            if return_pct > best_return:
+                best_return = return_pct
+                best_result = result
+        except Exception as e:
+            print(f"参数组合 {i+1}: 处理结果时出错 - {str(e)}")
+            continue
 
     # 使用最佳结果进行详细分析
     if best_result:
         strat = best_result[0]
-        best_max_rank = (
-            strat.params.max_rank if hasattr(strat.params, "max_rank") else "N/A"
-        )
 
         # 计算最佳策略的收益率
-        best_final_value = (
-            strat.broker.getvalue() if hasattr(strat, "broker") else initial_cash
-        )
+        best_final_value = strat.result["final_value"]
         best_return_pct = (
             ((best_final_value / initial_cash) - 1) * 100 if initial_cash > 0 else 0
         )
 
         print(f"\n=== 最佳参数组合结果（按收益率选择）===")
-        print(f"最佳参数: max_rank={best_max_rank}")
         print(f"收益率: {best_return_pct:.2f}%")
         print(f"初始资金: {initial_cash:,.0f}")
         print(f"最终资金: {best_final_value:,.0f}")
@@ -247,7 +256,7 @@ def run_backtest():
 
         # 使用BacktestResultSaver保存回测结果
         saver = BacktestResultSaver()
-        strategy_name = f"StrongSectorLowStockArbitrageStrategy_maxrank_{best_max_rank}"
+        strategy_name = f"StrongSectorLowStockArbitrageStrategy"
         saver.save_complete_results(
             strategy_name=strategy_name,
             strat=strat,

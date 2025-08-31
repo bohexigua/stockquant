@@ -1,0 +1,21 @@
+# 股票量化数据处理定时任务
+# 每个工作日19:30执行数据清洗和因子计算
+# 分钟 小时 日 月 星期几 命令
+30 19 * * 1-5 /Users/zwldqp/work/stockquant/daily_task.sh
+
+# 说明:
+# 30 19 * * 1-5 表示每周一到周五的19:30执行
+# 1-5 代表周一到周五（0=周日，1=周一，...，6=周六）
+# * 表示任意值
+
+# 安装此crontab配置的命令:
+# crontab /Users/zwldqp/work/stockquant/crontab_config.txt
+
+# 查看当前crontab任务的命令:
+# crontab -l
+
+# 编辑crontab任务的命令:
+# crontab -e
+
+# 删除所有crontab任务的命令:
+# crontab -r
