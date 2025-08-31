@@ -16,14 +16,14 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from backtest.data.stock_60min import Stock60minDataLoader, Stock60min
 from backtest.data.trading_calendar import Calendar
-from backtest.strategies.theme_hot_stock import ThemeHotStockStrategy
-from backtest.utils.helpers import BacktestResultSaver
+from backtest.strategies.strong_sector_low_stock_arbitrage import StrongSectorLowStockArbitrageStrategy
+from backtest.utils.helpers import BacktestResultSaver, is_valid_data
 
-fromdate = datetime(2025, 8, 11)
-todate = datetime(2025, 8, 22)
+# 近2周
+fromdate = datetime(2025, 8, 15)
+todate = datetime(2025, 8, 31)
 fromdate_str = fromdate.strftime('%Y-%m-%d')
 todate_str = todate.strftime('%Y-%m-%d')
-
 
 
 def load_stock_data_by_codes(fromdate, todate):
@@ -77,7 +77,7 @@ def run_backtest():
     """
     print("开始运行题材热门股票策略回测...")
     
-    initial_cash = 100000  # 10万初始资金
+    initial_cash = 20000  # 2万初始资金
 
     # 加载股票数据
     stock_data_dict = load_stock_data_by_codes(fromdate_str, todate_str)
@@ -92,12 +92,13 @@ def run_backtest():
     cerebro = bt.Cerebro()
     
     # 添加策略
-    cerebro.addstrategy(ThemeHotStockStrategy)
+    cerebro.addstrategy(StrongSectorLowStockArbitrageStrategy)
     
     # 获取回测期间的交易日数量
     calendar = Calendar()
     expected_trading_days = calendar.get_trading_days(fromdate_str, todate_str)
-    expected_trading_count = len(expected_trading_days)
+    # 每天 5 个 60 分钟 K 线
+    expected_trading_count = len(expected_trading_days) * 5
     print(f"回测期间预期交易日数量: {expected_trading_count}")
     
     # 添加股票数据源
@@ -151,10 +152,6 @@ def run_backtest():
     # 输出分析器结果
     strat = results[0]
     
-    if hasattr(strat.analyzers.sharpe, 'get_analysis'):
-        sharpe_ratio = strat.analyzers.sharpe.get_analysis().get('sharperatio', 'N/A')
-        print(f"夏普比率: {sharpe_ratio}")
-    
     if hasattr(strat.analyzers.drawdown, 'get_analysis'):
         drawdown = strat.analyzers.drawdown.get_analysis()
         max_drawdown = drawdown.get('max', {}).get('drawdown', 'N/A')
@@ -175,23 +172,20 @@ def run_backtest():
             avg_pnl = sum([t['pnl'] for t in strat.trade_log]) / total_trades
             print(f"平均每笔盈亏: {avg_pnl:.2f}")
     
-    # 使用cerebro内置绘图功能（优化版本）
-    print("\n正在生成回测图表...")
     portfolio_stats = strat.analyzers.getbyname('pyfolio')
     returns, positions, transactions, gross_lev = portfolio_stats.get_pf_items()
     print(f"回测完成，收益数据已生成，共{len(returns)}个交易日")
     
     # 使用BacktestResultSaver保存回测结果
     saver = BacktestResultSaver()
-    result_path = saver.save_complete_results(
-        strategy_name='tpl',
+    saver.save_complete_results(
+        strategy_name='StrongSectorLowStockArbitrageStrategy',
         cerebro=cerebro,
         strat=strat,
         start_date=fromdate_str,
         end_date=todate_str,
         initial_cash=initial_cash,
         returns=returns,
-        positions=positions,
         transactions=transactions
     )
 

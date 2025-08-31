@@ -177,7 +177,7 @@ class Stock60min(bt.feeds.PandasData):
     """
     # 定义60分钟数据的字段映射
     lines = (
-        'rank_today', 'market_cap', 'auction_pre_close', 'circ_mv', 'auction_volume_ratio'
+        'rank_today', 'market_cap', 'auction_pre_close', 'circ_mv', 'auction_volume_ratio', 'turnover_rate', 'volume_ratio', 'volume_surge_5d', 
     )
 
     

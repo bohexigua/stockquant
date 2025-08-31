@@ -21,6 +21,32 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from backtest.data.loader import Loader
 
+def is_valid_data(value: Any) -> bool:
+    """
+    判断数据是否有效
+    
+    Args:
+        value: 要检查的数据值
+        
+    Returns:
+        bool: 数据是否有效
+        
+    Rules:
+        - 对于数字类型(int, float, np.number)：不能是None和NaN
+        - 对于其他类型：不能是None
+    """
+    # 检查是否为None
+    if value is None:
+        return False
+    
+    # 检查是否为数字类型
+    if isinstance(value, (int, float, np.number)):
+        # 数字类型还需要检查是否为NaN
+        if pd.isna(value) or np.isnan(value):
+            return False
+    
+    return True
+
 class BacktestResultSaver:
     """
     回测结果保存器
@@ -94,7 +120,7 @@ class BacktestResultSaver:
         result_path.mkdir(parents=True, exist_ok=True)
         return result_path
     
-    def save_backtest_results(self, result_path: Path, strategy_name: str, cerebro, strat, 
+    def save_backtest_results(self, result_path: Path, strategy_name: str, strat, 
                              start_date: str, end_date: str, initial_cash: float,
                              returns: pd.Series = None, transactions: pd.DataFrame = None):
         """
@@ -111,7 +137,14 @@ class BacktestResultSaver:
             transactions: 交易记录
         """
         # 1. 保存统计明细
-        final_value = float(cerebro.broker.getvalue())
+        final_value = strat.result['final_value']
+        
+        # 获取最大回撤
+        max_drawdown = 'N/A'
+        if strat is not None and hasattr(strat, 'analyzers') and hasattr(strat.analyzers, 'drawdown'):
+            if hasattr(strat.analyzers.drawdown, 'get_analysis'):
+                drawdown = strat.analyzers.drawdown.get_analysis()
+                max_drawdown = drawdown.get('max', {}).get('drawdown', 'N/A')
         
         stats = {
             'strategy_name': strategy_name,
@@ -121,6 +154,7 @@ class BacktestResultSaver:
             'final_value': final_value,
             'total_return': (final_value - initial_cash),
             'return_pct': ((final_value - initial_cash) / initial_cash) * 100 if initial_cash > 0 else 0,
+            'max_drawdown': max_drawdown,
             'total_trades': len(strat.trade_log) if strat is not None and hasattr(strat, 'trade_log') else 0,
             'winning_trades': len([t for t in strat.trade_log if t['pnl'] > 0]) if strat is not None and hasattr(strat, 'trade_log') else 0,
             'win_rate': (len([t for t in strat.trade_log if t['pnl'] > 0]) / len(strat.trade_log) * 100) if strat is not None and hasattr(strat, 'trade_log') and strat.trade_log else 0,
@@ -162,6 +196,7 @@ class BacktestResultSaver:
         """
         try:
             # 保存性能快照图
+            logger.info(f"性能快照图准备生成...")
             snapshot_path = result_path / 'performance_snapshot.png'
             quantstats.plots.snapshot(returns, title=f'{strategy_name} Performance', 
                                     show=False, savefig=str(snapshot_path))
@@ -171,7 +206,7 @@ class BacktestResultSaver:
             logger.error(f"生成图表时出错: {e}")
             logger.info(f"请查看保存的结果文件夹: {result_path}")
     
-    def save_complete_results(self, strategy_name: str, cerebro, strat, start_date: str, end_date: str, 
+    def save_complete_results(self, strategy_name: str, strat, start_date: str, end_date: str, 
                              initial_cash: float, returns: pd.Series = None, 
                              transactions: pd.DataFrame = None) -> Path:
         """
@@ -193,11 +228,9 @@ class BacktestResultSaver:
         result_path = self.create_result_folder(strategy_name)
         
         # 保存回测结果
-        self.save_backtest_results(result_path, strategy_name, cerebro, strat, start_date, end_date, initial_cash,
+        self.save_backtest_results(result_path, strategy_name, strat, start_date, end_date, initial_cash,
                                  returns, transactions)
         
-        # 保存图表
-        if returns is not None:
-            self.save_charts(result_path, returns, strategy_name)
+        self.save_charts(result_path, returns, strategy_name)
         
         return result_path

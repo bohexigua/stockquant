@@ -97,7 +97,7 @@ class Stock60MinCleaner:
             return datetime.now().strftime('%Y%m%d')
     
     def get_trading_date_range(self) -> tuple:
-        """获取交易日期范围，end_date为距离今日最近的交易时间，start_date为今日-30天"""
+        """获取交易日期范围，end_date为距离今日最近的交易时间，start_date为今日-60天"""
         try:
             with self.connection.cursor() as cursor:
                 # 获取距离今日最近的交易时间作为end_date
@@ -116,15 +116,15 @@ class Stock60MinCleaner:
                     # 如果没有找到距离今日最近的交易日，使用今日
                     end_date = today
                 
-                # 计算今日-30天作为start_date
-                start_date_obj = datetime.now() - timedelta(days=30)
+                # 计算今日-60天作为start_date
+                start_date_obj = datetime.now() - timedelta(days=60)
                 start_date = start_date_obj.strftime('%Y%m%d')
                 
                 return start_date, end_date
         except Exception as e:
             logger.error(f"获取交易日期范围失败: {e}")
             today = datetime.now().strftime('%Y%m%d')
-            start_date_obj = datetime.now() - timedelta(days=30)
+            start_date_obj = datetime.now() - timedelta(days=60)
             start_date = start_date_obj.strftime('%Y%m%d')
             return start_date, today
     

@@ -154,9 +154,9 @@ class StockHotCleaner:
                     
                     try:
                         # 获取单日热榜数据
-                        df_hot = self.tushare_api.ths_hot(
+                        df_hot = self.tushare_api.dc_hot(
                             trade_date=trade_date,
-                            market='热股',
+                            market='A股市场',
                             is_new='Y',
                             fields='ts_code,ts_name,rank,pct_change,current_price,rank_time'
                         )

@@ -11,11 +11,15 @@ from datetime import datetime
 from typing import Optional, List
 import sys
 import os
+import warnings
 
 # 添加项目根目录到路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from config import config
+
+
+warnings.filterwarnings('ignore', message='pandas only supports SQLAlchemy connectable')
 
 
 class Loader:
@@ -67,7 +71,7 @@ class Loader:
             table_name: 表名
             
         Returns:
-            pandas.DataFrame: 处理后的数据，如果失败返回None
+            pd.DataFrame: 处理后的数据，如果失败返回None
         """
         if not self._connect():
             return None

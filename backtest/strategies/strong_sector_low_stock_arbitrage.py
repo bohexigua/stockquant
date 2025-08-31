@@ -1,5 +1,6 @@
 import backtrader as bt
 import pandas as pd
+import pdb
 import sys
 import os
 from datetime import datetime, timedelta
@@ -8,13 +9,15 @@ from datetime import datetime, timedelta
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from backtest.data.theme import ThemeDataLoader
+from backtest.data.Calendar import Calendar
+from backtest.utils.helpers import is_valid_data
 
 class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
     """
     强势板块低位套利（恐高）策略
     
     策略逻辑：
-    1. 当日买入前一日热门题材（TOP10）中的人气票（东财TOP100）且流动市值<150亿
+    1. 当日买入前一日热门题材（TOP）中的人气票（东财TOP）且流动市值在x亿-y亿之间且换手率在z%以上且量比在w%以上且股价在p1-p2之间
     2. 买入时机要保证相对位置不高（<6%）
     3. 次日如果竞价量能不及预期（<2%），开盘价卖出
     4. 次日未封板且0轴以上持续2h横盘（上下波动<3%），则卖出
@@ -22,13 +25,16 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
     """
     
     params = (
-        ('top_themes', 10),  # 选择前N个热门题材
-        ('max_market_cap', 1500000),  # 最大流动市值150亿
-        ('max_rank', 100),  # 人气票排名TOP100
+        ('top_themes', 5),  # 选择前N个热门题材
+        ('market_cap_range', (100 * 10000, 500 * 10000)),  # 流动市值范围(最小值, 最大值)
+        ('max_rank', 30),  # 人气票排名TOP
         ('max_relative_position', 0.06),  # 最大相对位置6%
         ('min_auction_volume', 0.02),  # 最小竞价量能2%
         ('sideways_threshold', 0.03),  # 横盘波动阈值3%
         ('sideways_hours', 2),  # 横盘持续时间2小时
+        ('stock_price_range', (0.0, 50.0)),  # 股价范围(最小值, 最大值)
+        ('min_turnover_rate', 25.0),  # 最小换手率
+        ('min_volume_ratio', 0.7),  # 最小量比
     )
     
     def __init__(self):
@@ -36,6 +42,7 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
         初始化策略
         """
         self.theme_loader = ThemeDataLoader()
+        self.calendar = Calendar()  # 交易日历
         
         # 记录持仓信息和买入时间
         self.position_dict = {}  # {stock_code: {'buy_date': date, 'buy_price': price, 'sideways_start': None}}
@@ -80,8 +87,13 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
         使用前一日的题材和股票数据来避免未来函数
         """
         try:
-            # 获取前一日的题材数据
-            prev_date = (current_date - timedelta(days=1)).strftime('%Y-%m-%d')
+            # 获取前一个交易日的题材数据
+            current_date_str = current_date.strftime('%Y-%m-%d')
+            prev_date = self.calendar.get_previous_trading_day(current_date_str)
+            
+            if prev_date is None:
+                # 如果无法获取前一个交易日，使用自然日减1作为备选
+                prev_date = (current_date - timedelta(days=1)).strftime('%Y-%m-%d')
 
             # 获取前一日TOP题材
             top_themes = self.theme_loader.get_top_themes_by_rank(
@@ -127,20 +139,44 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
         """
         try:
             # 1. 检查人气排名（使用前一日数据）
-            if hasattr(data, 'rank_today') and data.rank_today[-1] is not None:
+            if hasattr(data, 'rank_today') and is_valid_data(data.rank_today[-1]):
                 if data.rank_today[-1] > self.params.max_rank:
                     return False
             else:
                 return False  # 没有排名数据的股票不买入
             
             # 2. 检查流动市值
-            if hasattr(data, 'circ_mv') and data.circ_mv[-1] is not None:
-                if data.circ_mv[-1] > self.params.max_market_cap:
+            if hasattr(data, 'circ_mv') and is_valid_data(data.circ_mv[-1]):
+                min_cap, max_cap = self.params.market_cap_range
+                if data.circ_mv[-1] >= max_cap:
+                    return False
+                if data.circ_mv[-1] <= min_cap:
                     return False
             
-            # 3. 检查当前开盘价相对于昨日收盘价的涨幅（不超过6%）
+            # 3. 检查股价范围
+            current_price = data.open[0]
+            min_price, max_price = self.params.stock_price_range
+            if current_price >= max_price:
+                return False
+            if current_price <= min_price:
+                return False
+            
+            # 4. 检查前一日换手率
+            if hasattr(data, 'turnover_rate') and is_valid_data(data.turnover_rate[-1]):
+                if data.turnover_rate[-1] <= self.params.min_turnover_rate:
+                    return False
+            else:
+                return False  # 没有换手率数据的股票不买入
+            
+            # 5. 检查前一日量比
+            if hasattr(data, 'volume_ratio') and is_valid_data(data.volume_ratio[-1]):
+                if data.volume_ratio[-1] <= self.params.min_volume_ratio:
+                    return False
+            else:
+                return False  # 没有量比数据的股票不买入
+            
+            # 6. 检查当前开盘价相对于昨日收盘价的涨幅（不超过6%）
             if hasattr(data, 'auction_pre_close') and data.auction_pre_close[0] > 0:
-                current_price = data.open[0]
                 prev_close = data.auction_pre_close[0]
                 daily_change_pct = (current_price - prev_close) / prev_close
                 if daily_change_pct > 0.06:  # 相对昨日收盘价涨幅超过6%则不买入
@@ -158,8 +194,8 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
         """
         try:
             available_cash = self.broker.getcash()
-            if available_cash > 10000:  # 至少保留1万现金
-                position_size = min(available_cash * 0.1, 50000)  # 每次最多买入5万或可用资金的10%
+            if available_cash > 5000:  # 至少保留5000现金
+                position_size = min(available_cash * 1, 10000)  # 每次最多买入1万或可用资金的100%
                 shares = int(position_size / data.open[0] / 100) * 100  # 按手买入
                 
                 if shares > 0:
@@ -206,7 +242,7 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
         try:
             # 1. 开盘时检查竞价量能
             if current_time.hour == 9 and current_time.minute == 30:
-                if hasattr(data, 'auction_volume_ratio') and data.auction_volume_ratio[0] is not None:
+                if hasattr(data, 'auction_volume_ratio') and is_valid_data(data.auction_volume_ratio[0]):
                     if data.auction_volume_ratio[0] < self.params.min_auction_volume:
                         return '竞价量能不足'
             
@@ -242,11 +278,9 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
         检查是否横盘交易
         """
         try:
-            current_price = data.close[0]
-            
             # 检查最近2小时（2个60分钟K线）的价格波动
             if len(data.close) >= 2:
-                recent_prices = [data.close.get(ago=-i) for i in range(2)]
+                recent_prices = [data.close[-i] for i in range(2)]
                 price_range = (max(recent_prices) - min(recent_prices)) / min(recent_prices)
                 
                 if price_range <= self.params.sideways_threshold:
@@ -275,7 +309,12 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
             else:
                 self.log(f'卖出执行: {order.data._name}, 价格: {order.executed.price:.2f}, 数量: {order.executed.size}')
         elif order.status in [order.Canceled, order.Margin, order.Rejected]:
-            self.log(f'订单失败: {order.data._name}, 状态: {order.status}')
+            status_msg = {
+                order.Canceled: '已取消',
+                order.Margin: '保证金不足',
+                order.Rejected: '被拒绝'
+            }.get(order.status, f'未知状态({order.status})')
+            self.log(f'订单失败: {order.data._name}, 状态: {status_msg}, 原因: {getattr(order, "info", {}).get("reason", "未知原因")}')
     
     def notify_trade(self, trade):
         """
@@ -293,3 +332,16 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
                 'pnl_pct': pnl_pct,
                 'value': trade.value
             })
+
+    def stop(self):
+        """
+        策略结束时调用
+        """
+        # 回测结束时，记录当前策略的参数和 broker 数据
+        self.result = {
+            'params': self.params._getkwargs(),  # 当前参数组合（字典形式）
+            'final_value': self.broker.getvalue(),  # 最终总资产
+            'cash': self.broker.getcash(),  # 最终现金
+            'pnl': self.broker.getvalue() - self.broker.startingcash,  # 净收益
+            'trade_log': self.trade_log  # 交易记录
+        }

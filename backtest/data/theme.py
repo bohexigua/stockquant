@@ -43,13 +43,13 @@ class ThemeDataLoader:
             # 加载题材因子数据
             factor_data = self.loader.load_data(fromdate, todate, 'trade_factor_theme')
             if factor_data is None or factor_data.empty:
-                print("题材因子数据加载失败")
+                print(f"{fromdate} - {todate}的题材因子数据加载失败")
                 return None
             
             # 加载题材市场数据
             market_data = self.loader.load_data(fromdate, todate, 'trade_market_theme')
             if market_data is None or market_data.empty:
-                print("题材市场数据加载失败")
+                print(f"{fromdate} - {todate}的题材市场数据加载失败")
                 return None
             
             # 合并数据：基于日期和题材代码
