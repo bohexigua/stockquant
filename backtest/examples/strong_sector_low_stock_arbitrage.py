@@ -25,8 +25,8 @@ from backtest.strategies.strong_sector_low_stock_arbitrage import (
 from backtest.utils.helpers import BacktestResultSaver, is_valid_data
 
 # 近2周
-fromdate = datetime(2025, 8, 18)
-todate = datetime(2025, 8, 22)
+fromdate = datetime(2025, 8, 15)
+todate = datetime(2025, 8, 31)
 fromdate_str = fromdate.strftime("%Y-%m-%d")
 todate_str = todate.strftime("%Y-%m-%d")
 
@@ -100,10 +100,10 @@ def run_backtest():
     cerebro.optstrategy(
         StrongSectorLowStockArbitrageStrategy,
         max_rank=[30, 50],
-        market_cap_range=[(100 * 10000, 500 * 10000), (0 * 10000, 200 * 10000)],
-        top_themes=[1, 3, 5],
-        min_turnover_rate=[15.0, 25.0, 30.0],
-        min_volume_ratio=[0.7, 1.0],
+        # market_cap_range=[(200 * 10000, 1000 * 10000), (0 * 10000, 200 * 10000)],
+        # top_themes=[1, 3, 5],
+        # min_turnover_rate=[15.0, 25.0, 30.0],
+        # min_volume_ratio=[0.7, 1.0],
     )
 
     # 获取回测期间的交易日数量
@@ -162,7 +162,7 @@ def run_backtest():
     print(f"共测试了 {len(results)} 个参数组合")
 
     best_result = None
-    best_sharpe = -float("inf")
+    best_return = -float("inf")
 
     # 遍历所有优化结果，找到最佳的那个
     for i, result in enumerate(results):
@@ -177,6 +177,12 @@ def run_backtest():
         sharpe_ratio = (
             sharpe_analysis.get("sharperatio", 0.0) if sharpe_analysis else 0.0
         )
+        
+        # 获取最大回撤
+        drawdown_analysis = strat.analyzers.drawdown.get_analysis()
+        max_drawdown = (
+            drawdown_analysis.get("max", {}).get("drawdown", 0.0) if drawdown_analysis else 0.0
+        )
 
         # 从策略结果获取参数
         params = strat.result["params"]
@@ -187,11 +193,11 @@ def run_backtest():
         min_volume_ratio = params.get("min_volume_ratio", "N/A")
 
         print(
-            f"参数组合 {i+1}: max_rank={max_rank}, market_cap_range={market_cap_range}, top_themes={top_themes}, min_turnover_rate={min_turnover_rate}, min_volume_ratio={min_volume_ratio}, 收益率={return_pct:.2f}%, 夏普比率={sharpe_ratio:.4f}, 最终资金={final_value:,.0f}"
+            f"参数组合 {i+1}: max_rank={max_rank}, market_cap_range={market_cap_range}, top_themes={top_themes}, min_turnover_rate={min_turnover_rate}, min_volume_ratio={min_volume_ratio}, 收益率={return_pct:.2f}%, 夏普比率={sharpe_ratio:.4f}, 最大回撤={max_drawdown:.2f}%, 最终资金={final_value:,.0f}"
         )
 
-        if sharpe_ratio > best_sharpe:
-            best_sharpe = sharpe_ratio
+        if return_pct > best_return:
+            best_return = return_pct
             best_result = result
 
     # 使用最佳结果进行详细分析
@@ -209,9 +215,8 @@ def run_backtest():
             ((best_final_value / initial_cash) - 1) * 100 if initial_cash > 0 else 0
         )
 
-        print(f"\n=== 最佳参数组合结果（按夏普比率选择）===")
+        print(f"\n=== 最佳参数组合结果（按收益率选择）===")
         print(f"最佳参数: max_rank={best_max_rank}")
-        print(f"最佳夏普比率: {best_sharpe:.4f}")
         print(f"收益率: {best_return_pct:.2f}%")
         print(f"初始资金: {initial_cash:,.0f}")
         print(f"最终资金: {best_final_value:,.0f}")
