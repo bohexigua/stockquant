@@ -170,8 +170,8 @@ def run_backtest(mock_future_data=False):
     cerebro.optstrategy(
         StrongSectorLowStockArbitrageStrategy,
         max_rank=[30, 50],
-        market_cap_range=[(0 * 10000, 150 * 10000), (200 * 10000, 1000 * 10000)],
-        top_themes=[1, 2, 3],
+        market_cap_range=[(0 * 10000, 150 * 10000), (100 * 10000, 500 * 10000)],
+        top_themes=[1, 3, 5],
         min_turnover_rate=[20.0, 30.0, 40.0],
         min_volume_ratio=[0.7, 1],
     )

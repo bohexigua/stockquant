@@ -24,7 +24,7 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
     策略逻辑：
     1. 当日买入前一日热门题材（TOP）中的人气票（东财TOP）且流动市值在x亿-y亿之间且换手率在z%以上且量比在w%以上且股价在p1-p2之间
     2. 买入时机要保证相对位置不高（<6%）
-    3. 次日如果竞价量能不及预期（<2%），开盘价卖出
+    3. 次日如果竞价换手率不及预期（<0.6%），开盘价卖出
     4. 次日未封板且0轴以上持续2h横盘（上下波动<3%），则卖出
     5. 次日尾盘0轴以下，止损卖出
     """
@@ -34,7 +34,7 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
         ('market_cap_range', (100 * 10000, 500 * 10000)),  # 流动市值范围(最小值, 最大值)
         ('max_rank', 30),  # 人气票排名TOP
         ('max_relative_position', 0.06),  # 最大相对位置6%
-        ('min_auction_volume', 0.02),  # 最小竞价量能2%
+        ('min_auction_turnover_rate', 0.6),  # 最小竞价换手率0.6%
         ('sideways_threshold', 0.03),  # 横盘波动阈值3%
         ('sideways_hours', 2),  # 横盘持续时间2小时
         ('stock_price_range', (0.0, 50.0)),  # 股价范围(最小值, 最大值)
@@ -290,9 +290,9 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
         try:
             # 1. 开盘时检查竞价量能
             if current_time.hour == 9 and current_time.minute == 30:
-                if hasattr(data, 'auction_volume_ratio') and is_valid_data(data.auction_volume_ratio[0]):
-                    if data.auction_volume_ratio[0] < self.params.min_auction_volume:
-                        return '竞价量能不足'
+                if hasattr(data, 'min_auction_turnover_rate') and is_valid_data(data.min_auction_turnover_rate[0]):
+                    if data.min_auction_turnover_rate[0] < self.params.min_auction_turnover_rate:
+                        return '竞价换手率不足'
             
             # 计算当前涨跌幅（基于当前开盘价和昨日收盘价）
             current_price = data.open[0]
