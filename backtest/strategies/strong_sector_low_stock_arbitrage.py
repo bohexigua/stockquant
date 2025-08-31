@@ -290,8 +290,8 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
         try:
             # 1. 开盘时检查竞价量能
             if current_time.hour == 9 and current_time.minute == 30:
-                if hasattr(data, 'min_auction_turnover_rate') and is_valid_data(data.min_auction_turnover_rate[0]):
-                    if data.min_auction_turnover_rate[0] < self.params.min_auction_turnover_rate:
+                if hasattr(data, 'auction_turnover_rate') and is_valid_data(data.auction_turnover_rate[0]):
+                    if data.auction_turnover_rate[0] < self.params.min_auction_turnover_rate:
                         return '竞价换手率不足'
             
             # 计算当前涨跌幅（基于当前开盘价和昨日收盘价）
