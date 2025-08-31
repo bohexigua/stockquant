@@ -9,8 +9,14 @@ import sys
 import os
 import pdb
 import pandas as pd
+import numpy as np
 import backtrader as bt
 from datetime import datetime
+
+# 添加项目根目录到路径
+sys.path.append(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 
 # 导入日志配置
 from backtest.utils.logger import setup_logger
@@ -18,32 +24,28 @@ from backtest.utils.logger import setup_logger
 # 配置日志
 logger = setup_logger(__name__, "examples")
 
-# 添加项目根目录到路径
-sys.path.append(
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-)
-
 from backtest.data.stock_60min import Stock60minDataLoader, Stock60min
 from backtest.data.trading_calendar import Calendar
 from backtest.strategies.strong_sector_low_stock_arbitrage import (
     StrongSectorLowStockArbitrageStrategy,
 )
-from backtest.utils.helpers import BacktestResultSaver, is_valid_data
+from backtest.utils.helpers import BacktestResultSaver
 
 # 近2周
 fromdate = datetime(2025, 8, 15)
-todate = datetime(2025, 8, 31)
+todate = datetime(2025, 8, 30)
 fromdate_str = fromdate.strftime("%Y-%m-%d")
 todate_str = todate.strftime("%Y-%m-%d")
 
 
-def load_stock_data_by_codes(fromdate, todate):
+def load_stock_data_by_codes(fromdate, todate, mock_future_data=False):
     """
     根据股票代码列表加载60分钟数据
 
     Args:
         fromdate: 开始日期
         todate: 结束日期
+        mock_future_data: 是否启动未来交易日数据mock
 
     Returns:
         dict: 股票代码到DataFrame的映射
@@ -66,6 +68,11 @@ def load_stock_data_by_codes(fromdate, todate):
             stock_data["datetime"] = pd.to_datetime(stock_data["datetime"])
             # 按datetime排序
             stock_data = stock_data.sort_values("datetime")
+
+            # 如果需要mock未来交易日数据
+            if mock_future_data:
+                stock_data = _add_mock_future_data(stock_data, code)
+
             # 重置索引
             stock_data = stock_data.set_index("datetime", drop=True)
             stock_data_dict[code] = stock_data
@@ -82,16 +89,64 @@ def load_stock_data_by_codes(fromdate, todate):
     return stock_data_dict
 
 
-def run_backtest():
+def _add_mock_future_data(stock_data, code):
+    """
+    为股票数据添加mock的未来交易日60分钟数据
+
+    Args:
+        stock_data: 股票历史数据DataFrame
+        code: 股票代码
+
+    Returns:
+        DataFrame: 包含mock未来数据的股票数据
+    """
+    if stock_data.empty:
+        return stock_data
+
+    # 获取最后一个交易日
+    last_datetime = stock_data["datetime"].max()
+
+    # 计算下一个交易日（简单地加1天，实际应该考虑交易日历）
+    next_trading_day = last_datetime + pd.Timedelta(days=1)
+
+    # 生成下一个交易日9:30的60分钟时间点
+    trading_hours = ["09:30:00"]
+
+    mock_data_list = []
+    for hour in trading_hours:
+        mock_datetime = pd.to_datetime(f"{next_trading_day.date()} {hour}")
+
+        # 创建mock数据行，除datetime、code外，其他指标都为nan
+        mock_row = {col: np.nan for col in stock_data.columns}
+        mock_row["datetime"] = mock_datetime
+        mock_row["code"] = code
+
+        mock_data_list.append(mock_row)
+
+    # 创建mock数据DataFrame
+    mock_df = pd.DataFrame(mock_data_list)
+
+    # 合并原始数据和mock数据
+    combined_data = pd.concat([stock_data, mock_df], ignore_index=True)
+
+    logger.info(f"为股票 {code} 添加了 {len(mock_data_list)} 条mock未来数据")
+
+    return combined_data
+
+
+def run_backtest(mock_future_data=False):
     """
     运行回测
+
+    Args:
+        mock_future_data: 是否启动未来交易日数据mock
     """
     logger.info("开始运行题材热门股票策略回测...")
 
     initial_cash = 20000  # 2万初始资金
 
     # 加载股票数据
-    stock_data_dict = load_stock_data_by_codes(fromdate_str, todate_str)
+    stock_data_dict = load_stock_data_by_codes(fromdate_str, todate_str, mock_future_data)
 
     if not stock_data_dict:
         logger.error("未能加载到股票数据")
@@ -114,18 +169,22 @@ def run_backtest():
 
     cerebro.optstrategy(
         StrongSectorLowStockArbitrageStrategy,
-        max_rank=[50],
-        market_cap_range=[(200 * 10000, 1000 * 10000)],
-        top_themes=[1],
-        min_turnover_rate=[30.0],
-        min_volume_ratio=[0.7],
+        max_rank=[30, 50],
+        market_cap_range=[(0 * 10000, 150 * 10000), (200 * 10000, 1000 * 10000)],
+        top_themes=[1, 2, 3],
+        min_turnover_rate=[20.0, 30.0, 40.0],
+        min_volume_ratio=[0.7, 1],
     )
 
     # 获取回测期间的交易日数量
     calendar = Calendar()
     expected_trading_days = calendar.get_trading_days(fromdate_str, todate_str)
-    # 每天 5 个 60 分钟 K 线
-    expected_trading_count = len(expected_trading_days) * 5
+    if mock_future_data:
+        # 当日 5 个加未来日 1 个
+        expected_trading_count = 6
+    else:
+        # 每天 5 个 60 分钟 K 线
+        expected_trading_count = len(expected_trading_days) * 5
     logger.info(f"回测期间预期交易日数量: {expected_trading_count}")
 
     # 添加股票数据源
@@ -145,8 +204,8 @@ def run_backtest():
                 logger.info(f"添加数据源: {stock_code}, 数据量: {actual_trading_count}")
             else:
                 logger.info(
-                     f"跳过股票 {stock_code}: 数据量不足 ({actual_trading_count} < {expected_trading_count})"
-                 )
+                    f"跳过股票 {stock_code}: 数据量不足 ({actual_trading_count} < {expected_trading_count})"
+                )
 
     logger.info(f"总共添加了 {added_stocks} 只股票作为数据源")
 
@@ -175,6 +234,10 @@ def run_backtest():
     # 处理优化结果
     logger.info(f"\n=== 策略优化结果 ===")
     logger.info(f"共测试了 {len(results)} 个参数组合")
+
+    if mock_future_data:
+        logger.info("mock 数据时，不进行优化结果分析，仅为此日选股使用")
+        return
 
     best_result = None
     best_return = -float("inf")
@@ -277,6 +340,7 @@ def run_backtest():
 
 
 if __name__ == "__main__":
-    run_backtest()
+    # 运行回测，可选择是否启用未来交易日数据mock
+    run_backtest(mock_future_data=False)
     # print("=== 测试股票数据加载 ===")
     # load_stock_data_by_codes(fromdate_str, todate_str)

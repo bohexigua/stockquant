@@ -4,11 +4,6 @@ import pdb
 import sys
 import os
 from datetime import datetime, timedelta
-# 导入日志配置
-from backtest.utils.logger import setup_logger
-
-# 配置日志
-logger = setup_logger(__name__, "strategies")
 
 # 添加项目根目录到路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -16,6 +11,11 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 from backtest.data.theme import ThemeDataLoader
 from backtest.data.Calendar import Calendar
 from backtest.utils.helpers import is_valid_data
+# 导入日志配置
+from backtest.utils.logger import setup_logger
+
+# 配置日志
+logger = setup_logger(__name__, "strategies")
 
 class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
     """
@@ -75,6 +75,8 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
         current_date = self.datas[0].datetime.date(0)
         current_time = self.datas[0].datetime.time(0)
         current_datetime = self.datas[0].datetime.datetime(0)
+
+        logger.info(f'======== 当前时间: {current_datetime} =========')
         
         # 处理卖出逻辑（持仓股票的卖出条件检查）
         self.check_sell_conditions(current_date, current_time)
@@ -138,9 +140,9 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
         except Exception as e:
             self.log(f'买入条件检查出错: {e}')
     
-    def should_buy_stock(self, data):
+    def check_previous_day_indicators(self, data):
         """
-        检查单只股票是否满足买入条件
+        检查前一日指标是否满足条件
         """
         try:
             # 1. 检查人气排名（使用前一日数据）
@@ -158,7 +160,32 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
                 if data.circ_mv[-1] <= min_cap:
                     return False
             
-            # 3. 检查股价范围
+            # 3. 检查前一日换手率
+            if hasattr(data, 'turnover_rate') and is_valid_data(data.turnover_rate[-1]):
+                if data.turnover_rate[-1] <= self.params.min_turnover_rate:
+                    return False
+            else:
+                return False  # 没有换手率数据的股票不买入
+            
+            # 4. 检查前一日量比
+            if hasattr(data, 'volume_ratio') and is_valid_data(data.volume_ratio[-1]):
+                if data.volume_ratio[-1] <= self.params.min_volume_ratio:
+                    return False
+            else:
+                return False  # 没有量比数据的股票不买入
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f'股票 {data._name} 前一日指标检查出错: {e}')
+            return False
+    
+    def check_current_day_indicators(self, data):
+        """
+        检查当前日指标是否满足条件
+        """
+        try:
+            # 1. 检查股价范围
             current_price = data.open[0]
             min_price, max_price = self.params.stock_price_range
             if current_price >= max_price:
@@ -166,21 +193,7 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
             if current_price <= min_price:
                 return False
             
-            # 4. 检查前一日换手率
-            if hasattr(data, 'turnover_rate') and is_valid_data(data.turnover_rate[-1]):
-                if data.turnover_rate[-1] <= self.params.min_turnover_rate:
-                    return False
-            else:
-                return False  # 没有换手率数据的股票不买入
-            
-            # 5. 检查前一日量比
-            if hasattr(data, 'volume_ratio') and is_valid_data(data.volume_ratio[-1]):
-                if data.volume_ratio[-1] <= self.params.min_volume_ratio:
-                    return False
-            else:
-                return False  # 没有量比数据的股票不买入
-            
-            # 6. 检查当前开盘价相对于昨日收盘价的涨幅（不超过6%）
+            # 2. 检查当前开盘价相对于昨日收盘价的涨幅（不超过6%）
             if hasattr(data, 'auction_pre_close') and data.auction_pre_close[0] > 0:
                 prev_close = data.auction_pre_close[0]
                 daily_change_pct = (current_price - prev_close) / prev_close
@@ -190,7 +203,37 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
             return True
             
         except Exception as e:
-            self.log(f'股票 {data._name} 买入条件检查出错: {e}')
+            logger.error(f'股票 {data._name} 当前日指标检查出错: {e}')
+            return False
+    
+    def should_buy_stock(self, data):
+        """
+        检查单只股票是否满足买入条件
+        """
+        try:
+            logger.info(f'检查股票 {data._name} 买入条件')
+            # 先检查前一日指标
+            if not self.check_previous_day_indicators(data):
+                logger.info(f'股票 {data._name} 前一日指标检查不通过')
+                return False
+            
+            # 前一日指标检查通过，记录日志
+            logger.info(f'股票 {data._name} 前一日指标检查通过 - 人气排名: {data.rank_today[-1] if hasattr(data, "rank_today") else "N/A"}, '
+                       f'流动市值: {data.circ_mv[-1] if hasattr(data, "circ_mv") else "N/A"}, '
+                       f'换手率: {data.turnover_rate[-1] if hasattr(data, "turnover_rate") else "N/A"}%, '
+                       f'量比: {data.volume_ratio[-1] if hasattr(data, "volume_ratio") else "N/A"}')
+            
+            # 再检查当前日指标
+            if not self.check_current_day_indicators(data):
+                return False
+            
+            # 当前日指标检查通过，记录日志
+            logger.info(f'股票 {data._name} 当前日指标检查通过 - 股价: {data.open[0]:.2f}')
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f'股票 {data._name} 买入条件检查出错: {e}')
             return False
     
     def execute_buy(self, data):
