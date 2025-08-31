@@ -22,7 +22,7 @@ import tushare as ts
 from config import config
 
 # 创建logs目录
-logs_dir = os.path.join(project_root, 'logs')
+logs_dir = os.path.join(project_root, 'logs/tradeDataClean')
 os.makedirs(logs_dir, exist_ok=True)
 
 # 配置日志 - 输出到文件和控制台

@@ -4,6 +4,11 @@ import pdb
 import sys
 import os
 from datetime import datetime, timedelta
+# 导入日志配置
+from backtest.utils.logger import setup_logger
+
+# 配置日志
+logger = setup_logger(__name__, "strategies")
 
 # 添加项目根目录到路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -54,14 +59,14 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
         self.prev_day_themes = None
         self.prev_day_stocks = {}
         
-        print(f"强势板块低位套利策略初始化完成，数据源数量: {len(self.datas)}")
+        logger.info(f"强势板块低位套利策略初始化完成，数据源数量: {len(self.datas)}")
     
     def log(self, txt, dt=None):
         """
         日志记录函数
         """
         dt = dt or self.datas[0].datetime.date(0)
-        print(f'{dt.isoformat()}: {txt}')
+        logger.info(f'{dt.isoformat()}: {txt}')
     
     def next(self):
         """

@@ -19,7 +19,7 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
 # 创建logs目录
-logs_dir = os.path.join(project_root, 'logs')
+logs_dir = os.path.join(project_root, 'logs/tradeDataClean')
 os.makedirs(logs_dir, exist_ok=True)
 
 # 配置日志 - 输出到文件和控制台

@@ -12,6 +12,12 @@ import pandas as pd
 import backtrader as bt
 from datetime import datetime
 
+# 导入日志配置
+from backtest.utils.logger import setup_logger
+
+# 配置日志
+logger = setup_logger(__name__, "examples")
+
 # 添加项目根目录到路径
 sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -68,10 +74,10 @@ def load_stock_data_by_codes(fromdate, todate):
     if stock_data_dict:
         first_stock_code = list(stock_data_dict.keys())[0]
         first_stock_data = stock_data_dict[first_stock_code]
-        print(f"\n=== {first_stock_code} 股票60分钟数据前5行 ===")
-        print(first_stock_data.head())
-        print(f"数据形状: {first_stock_data.shape}")
-        print(f"列名: {list(first_stock_data.columns)}")
+        logger.info(f"\n=== {first_stock_code} 股票60分钟数据前5行 ===")
+        logger.info(first_stock_data.head())
+        logger.info(f"数据形状: {first_stock_data.shape}")
+        logger.info(f"列名: {list(first_stock_data.columns)}")
 
     return stock_data_dict
 
@@ -80,7 +86,7 @@ def run_backtest():
     """
     运行回测
     """
-    print("开始运行题材热门股票策略回测...")
+    logger.info("开始运行题材热门股票策略回测...")
 
     initial_cash = 20000  # 2万初始资金
 
@@ -88,10 +94,10 @@ def run_backtest():
     stock_data_dict = load_stock_data_by_codes(fromdate_str, todate_str)
 
     if not stock_data_dict:
-        print("未能加载到股票数据")
+        logger.error("未能加载到股票数据")
         return
 
-    print(f"成功加载 {len(stock_data_dict)} 只股票的数据")
+    logger.info(f"成功加载 {len(stock_data_dict)} 只股票的数据")
 
     # 创建Cerebro引擎
     cerebro = bt.Cerebro(optreturn=False)
@@ -120,7 +126,7 @@ def run_backtest():
     expected_trading_days = calendar.get_trading_days(fromdate_str, todate_str)
     # 每天 5 个 60 分钟 K 线
     expected_trading_count = len(expected_trading_days) * 5
-    print(f"回测期间预期交易日数量: {expected_trading_count}")
+    logger.info(f"回测期间预期交易日数量: {expected_trading_count}")
 
     # 添加股票数据源
     added_stocks = 0
@@ -136,13 +142,13 @@ def run_backtest():
                 data_feed._name = stock_code  # 设置股票代码标识
                 cerebro.adddata(data_feed)
                 added_stocks += 1
-                print(f"添加数据源: {stock_code}, 数据量: {actual_trading_count}")
+                logger.info(f"添加数据源: {stock_code}, 数据量: {actual_trading_count}")
             else:
-                print(
-                    f"跳过股票 {stock_code}: 数据量不足 ({actual_trading_count} < {expected_trading_count})"
-                )
+                logger.info(
+                     f"跳过股票 {stock_code}: 数据量不足 ({actual_trading_count} < {expected_trading_count})"
+                 )
 
-    print(f"总共添加了 {added_stocks} 只股票作为数据源")
+    logger.info(f"总共添加了 {added_stocks} 只股票作为数据源")
 
     # 设置初始资金
     cerebro.broker.setcash(initial_cash)
@@ -158,17 +164,17 @@ def run_backtest():
     cerebro.addanalyzer(bt.analyzers.Returns, _name="returns")
     cerebro.addanalyzer(bt.analyzers.PyFolio, _name="pyfolio")
 
-    print(f"回测设置完成，初始资金: {initial_cash:,.0f}")
-    print(f"回测期间: {fromdate} 到 {todate}")
-    print(f"数据源数量: {len(stock_data_dict)}")
+    logger.info(f"回测设置完成，初始资金: {initial_cash:,.0f}")
+    logger.info(f"回测期间: {fromdate} 到 {todate}")
+    logger.info(f"数据源数量: {len(stock_data_dict)}")
 
     # 运行回测
-    print("\n开始执行回测...")
+    logger.info("\n开始执行回测...")
     results = cerebro.run(maxcpus=1)  # 禁用多进程以避免序列化错误
 
     # 处理优化结果
-    print(f"\n=== 策略优化结果 ===")
-    print(f"共测试了 {len(results)} 个参数组合")
+    logger.info(f"\n=== 策略优化结果 ===")
+    logger.info(f"共测试了 {len(results)} 个参数组合")
 
     best_result = None
     best_return = -float("inf")
@@ -204,7 +210,7 @@ def run_backtest():
         min_volume_ratio = params.get("min_volume_ratio", "N/A")
 
         try:
-            print(
+            logger.info(
                 f"参数组合 {i+1}: max_rank={max_rank}, market_cap_range={market_cap_range}, top_themes={top_themes}, min_turnover_rate={min_turnover_rate}, min_volume_ratio={min_volume_ratio}, 收益率={return_pct:.2f}%, 夏普比率={sharpe_ratio:.4f}, 最大回撤={max_drawdown:.2f}%, 最终资金={final_value:,.0f}"
             )
 
@@ -212,7 +218,7 @@ def run_backtest():
                 best_return = return_pct
                 best_result = result
         except Exception as e:
-            print(f"参数组合 {i+1}: 处理结果时出错 - {str(e)}")
+            logger.error(f"参数组合 {i+1}: 处理结果时出错 - {str(e)}")
             continue
 
     # 使用最佳结果进行详细分析
@@ -225,15 +231,15 @@ def run_backtest():
             ((best_final_value / initial_cash) - 1) * 100 if initial_cash > 0 else 0
         )
 
-        print(f"\n=== 最佳参数组合结果（按收益率选择）===")
-        print(f"收益率: {best_return_pct:.2f}%")
-        print(f"初始资金: {initial_cash:,.0f}")
-        print(f"最终资金: {best_final_value:,.0f}")
+        logger.info(f"\n=== 最佳参数组合结果（按收益率选择）===")
+        logger.info(f"收益率: {best_return_pct:.2f}%")
+        logger.info(f"初始资金: {initial_cash:,.0f}")
+        logger.info(f"最终资金: {best_final_value:,.0f}")
 
     if hasattr(strat.analyzers.drawdown, "get_analysis"):
         drawdown = strat.analyzers.drawdown.get_analysis()
         max_drawdown = drawdown.get("max", {}).get("drawdown", "N/A")
-        print(f"最大回撤: {max_drawdown:.2f}%")
+        logger.info(f"最大回撤: {max_drawdown:.2f}%")
 
     # 输出交易统计
     if hasattr(strat, "trade_log") and strat.trade_log:
@@ -241,18 +247,18 @@ def run_backtest():
         profitable_trades = len([t for t in strat.trade_log if t["pnl"] > 0])
         win_rate = (profitable_trades / total_trades) * 100 if total_trades > 0 else 0
 
-        print(f"\n=== 交易统计（不包括持仓中）===")
-        print(f"总交易次数: {total_trades}")
-        print(f"盈利交易: {profitable_trades}")
-        print(f"胜率: {win_rate:.2f}%")
+        logger.info(f"\n=== 交易统计（不包括持仓中）===")
+        logger.info(f"总交易次数: {total_trades}")
+        logger.info(f"盈利交易: {profitable_trades}")
+        logger.info(f"胜率: {win_rate:.2f}%")
 
         if total_trades > 0:
             avg_pnl = sum([t["pnl"] for t in strat.trade_log]) / total_trades
-            print(f"平均每笔盈亏: {avg_pnl:.2f}")
+            logger.info(f"平均每笔盈亏: {avg_pnl:.2f}")
 
         portfolio_stats = strat.analyzers.getbyname("pyfolio")
         returns, positions, transactions, gross_lev = portfolio_stats.get_pf_items()
-        print(f"回测完成，收益数据已生成，共{len(returns)}个交易日")
+        logger.info(f"回测完成，收益数据已生成，共{len(returns)}个交易日")
 
         # 使用BacktestResultSaver保存回测结果
         saver = BacktestResultSaver()
@@ -267,7 +273,7 @@ def run_backtest():
             transactions=transactions,
         )
     else:
-        print("未找到有效的优化结果")
+        logger.error("未找到有效的优化结果")
 
 
 if __name__ == "__main__":

@@ -21,7 +21,7 @@ sys.path.insert(0, project_root)
 from config import config, DatabaseConfig
 
 # 创建logs目录
-logs_dir = os.path.join(project_root, 'logs')
+logs_dir = os.path.join(project_root, 'logs/tradeDataClean')
 os.makedirs(logs_dir, exist_ok=True)
 
 # 配置日志 - 输出到文件和控制台
