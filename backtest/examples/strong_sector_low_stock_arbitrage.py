@@ -32,8 +32,8 @@ from backtest.strategies.strong_sector_low_stock_arbitrage import (
 from backtest.utils.helpers import BacktestResultSaver
 
 # 近2周
-fromdate = datetime(2025, 8, 15)
-todate = datetime(2025, 8, 30)
+fromdate = datetime(2025, 9, 2)
+todate = datetime(2025, 9, 3)
 fromdate_str = fromdate.strftime("%Y-%m-%d")
 todate_str = todate.strftime("%Y-%m-%d")
 
@@ -82,9 +82,22 @@ def load_stock_data_by_codes(fromdate, todate, mock_future_data=False):
         first_stock_code = list(stock_data_dict.keys())[0]
         first_stock_data = stock_data_dict[first_stock_code]
         logger.info(f"\n=== {first_stock_code} 股票60分钟数据前5行 ===")
-        logger.info(first_stock_data.head())
+        logger.info(first_stock_data.head(5))
         logger.info(f"数据形状: {first_stock_data.shape}")
         logger.info(f"列名: {list(first_stock_data.columns)}")
+        
+        # # 检查并打印所有股票包含None值的数据行（排除NaN和NaT）
+        # for stock_code, stock_data in stock_data_dict.items():
+        #     # 检查真正的None值，排除NaN和NaT
+        #     none_mask = stock_data.applymap(lambda x: x is None)
+        #     none_rows = stock_data[none_mask.any(axis=1)]
+            
+        #     if not none_rows.empty:
+        #         logger.info(f"\n=== {stock_code} 包含None值的数据行 ===")
+        #         logger.info(none_rows.to_string())
+        #         logger.info(f"包含None值的行数: {len(none_rows)}")
+        #     else:
+        #         logger.info(f"\n=== {stock_code} 没有包含None值的数据行 ===")
 
     return stock_data_dict
 
@@ -146,7 +159,9 @@ def run_backtest(mock_future_data=False):
     initial_cash = 20000  # 2万初始资金
 
     # 加载股票数据
-    stock_data_dict = load_stock_data_by_codes(fromdate_str, todate_str, mock_future_data)
+    stock_data_dict = load_stock_data_by_codes(
+        fromdate_str, todate_str, mock_future_data
+    )
 
     if not stock_data_dict:
         logger.error("未能加载到股票数据")
@@ -169,11 +184,16 @@ def run_backtest(mock_future_data=False):
 
     cerebro.optstrategy(
         StrongSectorLowStockArbitrageStrategy,
-        max_rank=[30, 50],
-        market_cap_range=[(0 * 10000, 150 * 10000), (100 * 10000, 500 * 10000)],
-        top_themes=[1, 3, 5],
-        min_turnover_rate=[20.0, 30.0, 40.0],
-        min_volume_ratio=[0.7, 1],
+        # max_rank=[30, 50],
+        # market_cap_range=[(0 * 10000, 150 * 10000), (200 * 10000, 1200 * 10000)],
+        # top_themes=[1, 3],
+        # min_turnover_rate=[20.0, 30.0, 40.0],
+        # min_volume_ratio=[0.7, 1],
+        max_rank=[50],
+        market_cap_range=[(200 * 10000, 1200 * 10000)],
+        top_themes=[3],
+        min_turnover_rate=[25.0],
+        min_volume_ratio=[0.7],
     )
 
     # 获取回测期间的交易日数量
@@ -185,7 +205,7 @@ def run_backtest(mock_future_data=False):
     else:
         # 每天 5 个 60 分钟 K 线
         expected_trading_count = len(expected_trading_days) * 5
-    logger.info(f"回测期间预期交易日数量: {expected_trading_count}")
+    logger.info(f"回测期间预期交易分钟数量: {expected_trading_count}")
 
     # 添加股票数据源
     added_stocks = 0
@@ -195,9 +215,7 @@ def run_backtest(mock_future_data=False):
             actual_trading_count = len(stock_data)
             if actual_trading_count >= expected_trading_count:
                 # 创建60分钟数据源
-                data_feed = Stock60min(
-                    dataname=stock_data, fromdate=fromdate, todate=todate
-                )
+                data_feed = Stock60min(dataname=stock_data)
                 data_feed._name = stock_code  # 设置股票代码标识
                 cerebro.adddata(data_feed)
                 added_stocks += 1
@@ -224,7 +242,7 @@ def run_backtest(mock_future_data=False):
     cerebro.addanalyzer(bt.analyzers.PyFolio, _name="pyfolio")
 
     logger.info(f"回测设置完成，初始资金: {initial_cash:,.0f}")
-    logger.info(f"回测期间: {fromdate} 到 {todate}")
+    logger.info(f"回测期间: {fromdate_str} 到 {todate_str}")
     logger.info(f"数据源数量: {len(stock_data_dict)}")
 
     # 运行回测
@@ -341,6 +359,6 @@ def run_backtest(mock_future_data=False):
 
 if __name__ == "__main__":
     # 运行回测，可选择是否启用未来交易日数据mock
-    run_backtest(mock_future_data=False)
+    run_backtest(mock_future_data=True)
     # print("=== 测试股票数据加载 ===")
     # load_stock_data_by_codes(fromdate_str, todate_str)

@@ -72,6 +72,10 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
         """
         策略主逻辑
         """
+        # 确保至少有2根K线数据才继续执行
+        if len(self.data) < 2:
+            return
+            
         current_date = self.datas[0].datetime.date(0)
         current_time = self.datas[0].datetime.time(0)
         current_datetime = self.datas[0].datetime.datetime(0)
@@ -102,10 +106,23 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
                 # 如果无法获取前一个交易日，使用自然日减1作为备选
                 prev_date = (current_date - timedelta(days=1)).strftime('%Y-%m-%d')
 
+            # 动态调整top_themes参数
+            current_top_themes = self.params.top_themes
+            
+            if prev_date:
+                prev_date_obj = datetime.strptime(prev_date, '%Y-%m-%d').date()
+                days_diff = (current_date - prev_date_obj).days
+                
+                # 如果上个交易日和当前交易日相隔超过1日
+                if days_diff > 1:
+                    # 防止热度变更
+                    current_top_themes = self.params.top_themes + 2
+                    logger.info(f"检测到交易日间隔{days_diff}天，将top_themes从{self.params.top_themes}调整为{current_top_themes}")
+
             # 获取前一日TOP题材
             top_themes = self.theme_loader.get_top_themes_by_rank(
                 prev_date, 
-                top_n=self.params.top_themes
+                top_n=current_top_themes
             )
             
             if top_themes is None or top_themes.empty:
