@@ -56,12 +56,14 @@ class DataCleanScheduler:
             'market': [
                 'stock_basic_daily.py',  # 股票基础信息
                 'stock_daily.py',  # 股票日行情
+                'stock_fund_flow.py',  # 股票日资金流向数据
                 'dc_concept.py',  # 东财概念板块
                 'theme.py',  # 主题板块
                 'dc_stock_hot.py',  # 东财热门股票
                 'stock_auction_daily.py',  # 股票集合竞价
                 'stock_60min.py',  # 股票60分钟数据
-                'stock_cyq_daily.py'  # 股票筹码分布
+                'stock_cyq_daily.py',  # 股票筹码分布
+                'index_daily.py'  # 指数日行情
             ]
         }
     

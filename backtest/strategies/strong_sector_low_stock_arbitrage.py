@@ -34,7 +34,7 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
         ('market_cap_range', (100 * 10000, 500 * 10000)),  # 流动市值范围(最小值, 最大值)
         ('max_rank', 30),  # 人气票排名TOP
         ('max_relative_position', 0.06),  # 最大相对位置6%
-        ('min_auction_turnover_rate', 0.6),  # 最小竞价换手率0.6%
+        ('min_auction_turnover_ratio', 0.025),  # 最小竞价相对昨天换手率比 2.5%
         ('sideways_threshold', 0.03),  # 横盘波动阈值3%
         ('sideways_hours', 2),  # 横盘持续时间2小时
         ('stock_price_range', (0.0, 50.0)),  # 股价范围(最小值, 最大值)
@@ -307,8 +307,11 @@ class StrongSectorLowStockArbitrageStrategy(bt.Strategy):
         try:
             # 1. 开盘时检查竞价量能
             if current_time.hour == 9 and current_time.minute == 30:
-                if hasattr(data, 'auction_turnover_rate') and is_valid_data(data.auction_turnover_rate[0]):
-                    if data.auction_turnover_rate[0] < self.params.min_auction_turnover_rate:
+                if hasattr(data, 'auction_turnover_rate') and is_valid_data(data.auction_turnover_rate[0]) and hasattr(data, 'turnover_rate') and is_valid_data(data.turnover_rate[-1]) and data.turnover_rate[-1] > 0:
+                    # 计算集合竞价换手率相对于昨日换手率的比值
+                    auction_turnover_ratio = data.auction_turnover_rate[0] / data.turnover_rate[-1]
+                    
+                    if auction_turnover_ratio < self.params.min_auction_turnover_ratio:
                         return '竞价换手率不足'
             
             # 计算当前涨跌幅（基于当前开盘价和昨日收盘价）
