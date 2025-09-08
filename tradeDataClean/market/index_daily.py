@@ -145,7 +145,7 @@ class IndexDailyCleaner:
         try:
             with self.connection.cursor() as cursor:
                 sql = """
-                SELECT ts_code 
+                SELECT code 
                 FROM trade_market_index_basic
                 """
                 cursor.execute(sql)
@@ -163,11 +163,11 @@ class IndexDailyCleaner:
             logger.error(f"获取指数代码失败: {e}")
             return []
     
-    def fetch_index_daily_data(self, ts_code: str, start_date: str, end_date: str) -> pd.DataFrame:
+    def fetch_index_daily_data(self, code: str, start_date: str, end_date: str) -> pd.DataFrame:
         """获取单个指数的日线行情数据
         
         Args:
-            ts_code: 指数代码
+            code: 指数代码
             start_date: 开始日期，格式YYYYMMDD
             end_date: 结束日期，格式YYYYMMDD
             
@@ -175,25 +175,25 @@ class IndexDailyCleaner:
             pd.DataFrame: 指数日线行情数据
         """
         try:
-            logger.info(f"开始获取指数 {ts_code} 的日线行情数据，日期范围: {start_date} - {end_date}")
+            logger.info(f"开始获取指数 {code} 的日线行情数据，日期范围: {start_date} - {end_date}")
             
             # 调用Tushare的index_daily接口
             df = self.tushare_api.index_daily(
-                ts_code=ts_code,
+                ts_code=code,
                 start_date=start_date,
                 end_date=end_date,
                 fields='ts_code,trade_date,open,high,low,close,pre_close,change,pct_chg,vol,amount'
             )
             
             if df.empty:
-                logger.warning(f"未获取到指数 {ts_code} 的日线行情数据")
+                logger.warning(f"未获取到指数 {code} 的日线行情数据")
                 return pd.DataFrame()
             
-            logger.info(f"成功获取指数 {ts_code} 的{len(df)}条日线行情数据")
+            logger.info(f"成功获取指数 {code} 的{len(df)}条日线行情数据")
             return df
             
         except Exception as e:
-            logger.error(f"获取指数 {ts_code} 的日线行情数据失败: {e}")
+            logger.error(f"获取指数 {code} 的日线行情数据失败: {e}")
             return pd.DataFrame()
     
     def clean_index_daily_data(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -328,10 +328,10 @@ class IndexDailyCleaner:
             success_count = 0
             
             # 循环获取每个指数的日线行情数据
-            for ts_code in index_codes:
+            for code in index_codes:
                 try:
                     # 获取单个指数的日线行情数据
-                    df = self.fetch_index_daily_data(ts_code, start_date, end_date)
+                    df = self.fetch_index_daily_data(code, start_date, end_date)
                     
                     if not df.empty:
                         # 清洗数据
@@ -344,16 +344,16 @@ class IndexDailyCleaner:
                             if success:
                                 total_count += len(df_cleaned)
                                 success_count += 1
-                                logger.info(f"指数 {ts_code} 的日线行情数据已成功入库，共{len(df_cleaned)}条")
+                                logger.info(f"指数 {code} 的日线行情数据已成功入库，共{len(df_cleaned)}条")
                             else:
-                                logger.error(f"指数 {ts_code} 的日线行情数据入库失败")
+                                logger.error(f"指数 {code} 的日线行情数据入库失败")
                         else:
-                            logger.warning(f"指数 {ts_code} 的日线行情数据清洗后为空")
+                            logger.warning(f"指数 {code} 的日线行情数据清洗后为空")
                     else:
-                        logger.warning(f"未获取到指数 {ts_code} 的日线行情数据")
+                        logger.warning(f"未获取到指数 {code} 的日线行情数据")
                         
                 except Exception as e:
-                    logger.error(f"处理指数 {ts_code} 的日线行情数据失败: {e}")
+                    logger.error(f"处理指数 {code} 的日线行情数据失败: {e}")
                     continue
             
             logger.info(f"指数日线行情数据更新完成，共处理{len(index_codes)}个指数，成功{success_count}个，总共入库{total_count}条数据")
