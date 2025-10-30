@@ -131,9 +131,9 @@ class ThemeCleaner:
             return start_date, end_date
     
     def fetch_theme_data_range(self, start_date: str, end_date: str) -> pd.DataFrame:
-        """获取指定日期范围的题材数据（单日循环获取并立即入库）"""
+        """获取指定日期范围的概念板块数据（单日循环获取并立即入库）"""
         try:
-            logger.info(f"开始获取题材数据，日期范围: {start_date} - {end_date}")
+            logger.info(f"开始获取概念板块数据，日期范围: {start_date} - {end_date}")
             
             # 获取日期范围内的所有交易日
             trading_dates = self._get_trading_dates_in_range(start_date, end_date)
@@ -152,16 +152,61 @@ class ThemeCleaner:
                         logger.info(f"{trade_date}数据已存在，跳过获取")
                         continue
                     
-                    logger.info(f"正在获取{trade_date}的题材数据")
+                    logger.info(f"正在获取{trade_date}的概念板块数据")
                     
-                    # 获取单日数据
-                    df_daily = self.tushare_api.kpl_concept(trade_date=trade_date)
+                    # 步骤1：获取概念板块基础信息
+                    df_concept_info = self.tushare_api.tdx_index(
+                        trade_date=trade_date, 
+                        idx_type='概念板块'
+                    )
                     
-                    if not df_daily.empty:
-                        logger.info(f"成功获取{trade_date}的{len(df_daily)}条数据")
+                    if df_concept_info.empty:
+                        logger.warning(f"未获取到{trade_date}的概念板块基础信息")
+                        continue
+                    
+                    logger.info(f"获取到{trade_date}的{len(df_concept_info)}个概念板块")
+                    
+                    # 步骤2：获取概念板块行情数据
+                    concept_codes = df_concept_info['ts_code'].tolist()
+                    df_daily_list = []
+                    
+                    # 分批获取行情数据，避免一次请求过多
+                    batch_size = 100
+                    for i in range(0, len(concept_codes), batch_size):
+                        batch_codes = concept_codes[i:i+batch_size]
+                        
+                        for code in batch_codes:
+                            try:
+                                df_daily_single = self.tushare_api.tdx_daily(
+                                    ts_code=code,
+                                    trade_date=trade_date
+                                )
+                                if not df_daily_single.empty:
+                                    df_daily_list.append(df_daily_single)
+                            except Exception as e:
+                                logger.warning(f"获取{code}行情数据失败: {e}")
+                                continue
+                    
+                    if not df_daily_list:
+                        logger.warning(f"未获取到{trade_date}的概念板块行情数据")
+                        continue
+                    
+                    # 合并行情数据
+                    df_daily = pd.concat(df_daily_list, ignore_index=True)
+                    
+                    # 合并基础信息和行情数据
+                    df_merged = pd.merge(
+                        df_concept_info[['ts_code', 'name', 'idx_count']], 
+                        df_daily[['ts_code', 'trade_date', 'pct_change', 'limit_up_num']], 
+                        on='ts_code', 
+                        how='inner'
+                    )
+                    
+                    if not df_merged.empty:
+                        logger.info(f"成功获取{trade_date}的{len(df_merged)}条概念板块数据")
                         
                         # 清洗数据
-                        df_cleaned = self.clean_theme_data(df_daily)
+                        df_cleaned = self.clean_theme_data(df_merged)
                         
                         if not df_cleaned.empty:
                             # 立即入库
@@ -174,7 +219,7 @@ class ThemeCleaner:
                         else:
                             logger.warning(f"{trade_date}数据清洗后为空")
                     else:
-                        logger.warning(f"未获取到{trade_date}的数据")
+                        logger.warning(f"未获取到{trade_date}的有效数据")
                         
                 except Exception as e:
                     logger.error(f"处理{trade_date}数据失败: {e}")
@@ -185,7 +230,7 @@ class ThemeCleaner:
             return pd.DataFrame({'total_count': [total_count]})
             
         except Exception as e:
-            logger.error(f"获取题材数据失败: {e}")
+            logger.error(f"获取概念板块数据失败: {e}")
             return pd.DataFrame()
     
     def _get_trading_dates_in_range(self, start_date: str, end_date: str) -> List[str]:
@@ -237,7 +282,7 @@ class ThemeCleaner:
             return False
     
     def clean_theme_data(self, df_theme: pd.DataFrame) -> pd.DataFrame:
-        """清洗题材数据"""
+        """清洗概念板块数据"""
         if df_theme.empty:
             return df_theme
         
@@ -247,8 +292,8 @@ class ThemeCleaner:
                 'trade_date': 'trade_date',
                 'ts_code': 'code',
                 'name': 'name',
-                'z_t_num': 'z_t_num',
-                'up_num': 'up_num'
+                'limit_up_num': 'z_t_num',  # 使用成分个数作为z_t_num
+                'pct_change': 'pct_change'
             })
             
             # 转换日期格式
@@ -256,18 +301,26 @@ class ThemeCleaner:
             
             # 处理空值和数据类型
             df_cleaned['z_t_num'] = pd.to_numeric(df_cleaned['z_t_num'], errors='coerce').fillna(0).astype('int')
-            df_cleaned['up_num'] = pd.to_numeric(df_cleaned['up_num'], errors='coerce').fillna(0).astype('int')
+            df_cleaned['pct_change'] = pd.to_numeric(df_cleaned['pct_change'], errors='coerce').fillna(0.0)
             
+            # up_num字段用0填充（按要求）
+            df_cleaned['up_num'] = 0
+            
+            # 基于pct_change字段计算热度排名（涨幅越大排名越靠前）
+            df_cleaned = df_cleaned.sort_values('pct_change', ascending=False)
             df_cleaned['rank_value'] = range(1, len(df_cleaned) + 1)
+            
+            # 选择需要的列
+            df_cleaned = df_cleaned[['trade_date', 'code', 'name', 'z_t_num', 'up_num', 'rank_value']]
             
             # 去除重复数据
             df_cleaned = df_cleaned.drop_duplicates(subset=['trade_date', 'code'])
             
-            logger.info(f"数据清洗完成，清洗后数据量: {len(df_cleaned)}")
+            logger.info(f"概念板块数据清洗完成，清洗后数据量: {len(df_cleaned)}")
             return df_cleaned
             
         except Exception as e:
-            logger.error(f"数据清洗失败: {e}")
+            logger.error(f"概念板块数据清洗失败: {e}")
             return pd.DataFrame()
     
     def insert_theme_data(self, df: pd.DataFrame) -> bool:

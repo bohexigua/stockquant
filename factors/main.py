@@ -54,8 +54,8 @@ class FactorCalculationScheduler:
         
         # 定义脚本执行顺序
         self.script_order = {
-            'stock': ['auction.py', 'hot.py', 'price_volume.py'],
-            'root': ['concept.py', 'theme.py']
+            'stock': ['investment.py', 'momentum.py'],
+            'root': [],
         }
     
     def get_available_scripts(self) -> Dict[str, List[str]]:
@@ -149,34 +149,6 @@ class FactorCalculationScheduler:
         logger.info(f"stock脚本执行完成: {success_count}/{len(scripts)} 成功")
         return success_count == len(scripts)
     
-    def execute_root_scripts(self, continue_on_error: bool = True) -> bool:
-        """
-        执行根目录下的脚本(concept.py, theme.py)
-        
-        Args:
-            continue_on_error (bool): 遇到错误时是否继续执行
-            
-        Returns:
-            bool: 所有脚本是否都执行成功
-        """
-        logger.info("开始执行根目录下的因子计算脚本")
-        
-        scripts = self.get_available_scripts()['root']
-        success_count = 0
-        
-        for script in scripts:
-            script_path = self.base_dir / script
-            success = self.load_and_execute_script(script_path)
-            
-            if success:
-                success_count += 1
-            elif not continue_on_error:
-                logger.error(f"脚本执行失败，停止执行: {script}")
-                return False
-        
-        logger.info(f"根目录脚本执行完成: {success_count}/{len(scripts)} 成功")
-        return success_count == len(scripts)
-    
     def execute_single_script(self, script_name: str) -> bool:
         """
         执行单个脚本
@@ -215,10 +187,7 @@ class FactorCalculationScheduler:
         # 先执行stock目录下的脚本
         stock_success = self.execute_stock_scripts(continue_on_error)
         
-        # 再执行根目录下的脚本
-        root_success = self.execute_root_scripts(continue_on_error)
-        
-        overall_success = stock_success and root_success
+        overall_success = stock_success
         
         if overall_success:
             logger.info("所有因子计算脚本执行成功")
@@ -327,8 +296,6 @@ def main():
         # 根据目录参数执行脚本
         if args.directory == 'stock':
             success = scheduler.execute_stock_scripts(continue_on_error)
-        elif args.directory == 'root':
-            success = scheduler.execute_root_scripts(continue_on_error)
         else:  # all
             success = scheduler.execute_all_scripts(continue_on_error)
         

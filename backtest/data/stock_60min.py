@@ -126,6 +126,9 @@ class Stock60minDataLoader:
         Returns:
             pd.DataFrame: 合并后的数据
         """
+        # 将daily_data中的None值替换为NaN
+        daily_data = daily_data.fillna(pd.NA)
+        
         # 使用left join，将日级别数据复制到对应的60分钟数据上
         merged = pd.merge(min60_data, daily_data, on=on, how='left', suffixes=('', '_daily'))
         

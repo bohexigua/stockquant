@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-股票题材关联数据清洗模块
-从Tushare获取题材成分股数据并写入数据库
+股票通达信板块关联数据清洗模块
+从Tushare获取通达信板块成分股数据并写入数据库
 """
 
 import tushare as ts
@@ -39,10 +39,10 @@ logger = logging.getLogger(__name__)
 
 class StockThemeRelationCleaner:
     """
-    股票题材关联数据清洗器
+    股票通达信板块关联数据清洗器
     
     主要功能：
-    1. 从Tushare获取题材成分股数据
+    1. 从Tushare获取通达信板块成分股数据
     2. 清洗和标准化数据
     3. 写入数据库
     """
@@ -188,62 +188,63 @@ class StockThemeRelationCleaner:
     
     def get_all_theme_codes(self) -> List[str]:
         """
-        获取所有题材板块代码
-        使用kpl_concept接口获取当日最新的题材板块列表
+        获取所有通达信板块代码
+        使用tdx_index接口获取通达信板块列表，仅获取概念板块
         
         Returns:
-            题材板块代码列表
+            通达信板块代码列表
         """
         try:
-            # 获取最近的交易日期
+            # 获取最近交易日
             trade_date = self.get_latest_trading_date()
+            logger.info(f"使用交易日期: {trade_date}")
             
-            # 使用kpl_concept接口获取题材板块信息
-            df = self.pro.kpl_concept(trade_date=trade_date)
+            # 使用tdx_index接口获取通达信板块信息，仅获取概念板块
+            df = self.pro.tdx_index(idx_type='概念板块', trade_date=trade_date)
             if df.empty:
-                logger.warning("未获取到题材板块信息")
+                logger.warning("未获取到通达信概念板块信息")
                 return []
             
             theme_codes = df['ts_code'].tolist()
-            logger.info(f"获取到 {len(theme_codes)} 个题材板块代码")
+            logger.info(f"获取到 {len(theme_codes)} 个通达信概念板块代码")
             return theme_codes
             
         except Exception as e:
-            logger.error(f"获取题材板块代码失败: {e}")
+            logger.error(f"获取通达信概念板块代码失败: {e}")
             return []
     
     def fetch_theme_concept_data(self, theme_code: str, trade_date: str) -> pd.DataFrame:
         """
-        从Tushare获取指定题材板块的成分数据
+        从Tushare获取指定通达信板块的成分数据
         
         Args:
-            theme_code: 题材板块代码
+            theme_code: 通达信板块代码
             trade_date: 交易日期，格式为YYYYMMDD
             
         Returns:
-            包含题材板块成分数据的DataFrame
+            包含通达信板块成分数据的DataFrame
         """
         try:
-            # 调用Tushare接口获取题材成分股数据
-            df = self.pro.kpl_concept_cons(trade_date=trade_date, ts_code=theme_code)
+            # 调用Tushare tdx_member接口获取通达信板块成分股数据
+            df = self.pro.tdx_member(trade_date=trade_date, ts_code=theme_code)
             
             if df.empty:
-                logger.warning(f"题材板块 {theme_code} 未获取到成分数据")
+                logger.warning(f"通达信板块 {theme_code} 未获取到成分数据")
                 return pd.DataFrame()
             
-            logger.info(f"题材板块 {theme_code} 成功获取 {len(df)} 条成分记录")
+            logger.info(f"通达信板块 {theme_code} 成功获取 {len(df)} 条成分记录")
             return df
             
         except Exception as e:
-            logger.error(f"获取题材板块 {theme_code} 成分数据失败: {e}")
+            logger.error(f"获取通达信板块 {theme_code} 成分数据失败: {e}")
             return pd.DataFrame()
     
     def clean_theme_relation_data(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        清洗题材关联数据
+        清洗通达信板块关联数据
         
         Args:
-            df: 原始数据DataFrame
+            df: 原始数据DataFrame（来自tdx_member接口）
             
         Returns:
             清洗后的DataFrame
@@ -255,10 +256,10 @@ class StockThemeRelationCleaner:
             # 重命名列名以匹配数据库表结构
             df_cleaned = df.copy()
             
-            # 根据API返回的字段进行重命名，匹配数据库表字段
+            # 根据tdx_member API返回的字段进行重命名，匹配数据库表字段
             column_mapping = {
-                'ts_code': 'theme_sector_code',  # 题材代码
-                'con_code': 'stock_code',             # 股票代码
+                'ts_code': 'theme_sector_code',  # 板块代码
+                'con_code': 'stock_code',        # 成分股票代码
             }
             
             # 重命名列
@@ -279,20 +280,20 @@ class StockThemeRelationCleaner:
             df_cleaned['theme_sector_code'] = df_cleaned['theme_sector_code'].astype(str)
             df_cleaned['stock_code'] = df_cleaned['stock_code'].astype(str)
             
-            logger.info(f"数据清洗完成，共 {len(df_cleaned)} 条记录")
+            logger.info(f"通达信板块关联数据清洗完成，共 {len(df_cleaned)} 条记录")
             
             return df_cleaned
             
         except Exception as e:
-            logger.error(f"数据清洗失败: {e}")
+            logger.error(f"通达信板块关联数据清洗失败: {e}")
             raise
     
     def check_theme_data_exists(self, theme_code: str) -> bool:
         """
-        检查指定题材板块的数据是否已存在于数据库中
+        检查指定通达信板块的数据是否已存在于数据库中
         
         Args:
-            theme_code: 题材板块代码
+            theme_code: 通达信板块代码
             
         Returns:
             如果数据已存在返回True，否则返回False
@@ -313,19 +314,19 @@ class StockThemeRelationCleaner:
             exists = count > 0
             
             if exists:
-                logger.info(f"题材板块 {theme_code} 数据已存在，共 {count} 条记录")
+                logger.info(f"通达信板块 {theme_code} 数据已存在，共 {count} 条记录")
             
             return exists
             
         except Exception as e:
-            logger.error(f"检查题材板块 {theme_code} 数据是否存在失败: {e}")
+            logger.error(f"检查通达信板块 {theme_code} 数据是否存在失败: {e}")
             return False
         finally:
             self._close_db_connection()
     
     def insert_theme_relation_data(self, df: pd.DataFrame, batch_size: int = 1000):
         """
-        批量插入题材关联数据到数据库
+        批量插入通达信板块关联数据到数据库
         
         Args:
             df: 要插入的数据DataFrame
@@ -340,7 +341,7 @@ class StockThemeRelationCleaner:
             
             # 清空现有数据（可选，根据业务需求决定）
             # self.cursor.execute("DELETE FROM trade_stock_theme_relation")
-            # logger.info("已清空现有题材关联数据")
+            # logger.info("已清空现有通达信板块关联数据")
             
             # 准备插入SQL
             insert_sql = """
@@ -355,7 +356,7 @@ class StockThemeRelationCleaner:
                 for _, row in df.iterrows()
             ]
             
-            logger.info(f"开始插入 {len(data_tuples)} 条题材关联数据")
+            logger.info(f"开始插入 {len(data_tuples)} 条通达信板块关联数据")
             
             # 批量插入
             total_inserted = 0
@@ -368,32 +369,32 @@ class StockThemeRelationCleaner:
                 total_inserted += len(batch_data)
                 logger.info(f"已插入 {total_inserted} 条记录")
             
-            logger.info(f"题材关联数据插入完成，共 {total_inserted} 条记录")
+            logger.info(f"通达信板块关联数据插入完成，共 {total_inserted} 条记录")
             
         except Exception as e:
             if self.connection:
                 self.connection.rollback()
-            logger.error(f"插入题材关联数据失败: {e}")
+            logger.error(f"插入通达信板块关联数据失败: {e}")
             raise
         finally:
             self._close_db_connection()
     
     def update_theme_relation_data(self):
         """
-        更新题材关联数据的主方法
-        先获取所有题材板块代码，然后逐个获取每个板块的成分股数据并立即入库
+        更新通达信板块关联数据的主方法
+        先获取所有通达信板块代码，然后逐个获取每个板块的成分股数据并立即入库
         """
         try:
-            logger.info("开始更新题材关联数据")
+            logger.info("开始更新通达信板块关联数据")
             
             # 获取最近的交易日期
             trade_date = self.get_latest_trading_date()
             
-            # 获取所有题材板块代码
+            # 获取所有通达信板块代码
             theme_codes = self.get_all_theme_codes()
             
             if not theme_codes:
-                logger.warning("未获取到题材板块代码，退出更新")
+                logger.warning("未获取到通达信板块代码，退出更新")
                 return
             
             total_themes = len(theme_codes)
@@ -401,31 +402,31 @@ class StockThemeRelationCleaner:
             skipped_count = 0
             total_inserted = 0
             
-            logger.info(f"共需要处理 {total_themes} 个题材板块")
+            logger.info(f"共需要处理 {total_themes} 个通达信板块")
             
-            # 逐个处理每个题材板块
+            # 逐个处理每个通达信板块
             for i, theme_code in enumerate(theme_codes, 1):
                 try:
-                    logger.info(f"处理第 {i}/{total_themes} 个题材板块: {theme_code}")
+                    logger.info(f"处理第 {i}/{total_themes} 个通达信板块: {theme_code}")
                     
-                    # 检查该题材板块数据是否已存在
+                    # 检查该通达信板块数据是否已存在
                     # if self.check_theme_data_exists(theme_code):
-                    #     logger.info(f"题材板块 {theme_code} 数据已存在，跳过")
+                    #     logger.info(f"通达信板块 {theme_code} 数据已存在，跳过")
                     #     skipped_count += 1
                     #     continue
                     
-                    # 获取该题材板块的成分股数据
+                    # 获取该通达信板块的成分股数据
                     df = self.fetch_theme_concept_data(theme_code, trade_date)
                     
                     if df.empty:
-                        logger.warning(f"题材板块 {theme_code} 无成分股数据")
+                        logger.warning(f"通达信板块 {theme_code} 无成分股数据")
                         continue
                     
                     # 清洗数据
                     cleaned_df = self.clean_theme_relation_data(df)
                     
                     if cleaned_df.empty:
-                        logger.warning(f"题材板块 {theme_code} 清洗后无有效数据")
+                        logger.warning(f"通达信板块 {theme_code} 清洗后无有效数据")
                         continue
                     
                     # 立即插入数据库
@@ -434,27 +435,27 @@ class StockThemeRelationCleaner:
                     processed_count += 1
                     total_inserted += len(cleaned_df)
                     
-                    logger.info(f"题材板块 {theme_code} 处理完成，插入 {len(cleaned_df)} 条记录")
+                    logger.info(f"通达信板块 {theme_code} 处理完成，插入 {len(cleaned_df)} 条记录")
                     
                 except Exception as e:
-                    logger.error(f"处理题材板块 {theme_code} 失败: {e}")
+                    logger.error(f"处理通达信板块 {theme_code} 失败: {e}")
                     continue
             
-            logger.info(f"题材关联数据更新完成")
+            logger.info(f"通达信板块关联数据更新完成")
             logger.info(f"总计处理: {processed_count} 个板块")
             logger.info(f"跳过已存在: {skipped_count} 个板块")
             logger.info(f"总计插入: {total_inserted} 条记录")
             
         except Exception as e:
-            logger.error(f"更新题材关联数据失败: {e}")
+            logger.error(f"更新通达信板块关联数据失败: {e}")
             raise
     
     def get_theme_stocks(self, theme_code: str) -> List[str]:
         """
-        获取指定题材的成分股列表
+        获取指定通达信板块的成分股列表
         
         Args:
-            theme_code: 题材代码
+            theme_code: 通达信板块代码
             
         Returns:
             股票代码列表
@@ -473,12 +474,12 @@ class StockThemeRelationCleaner:
             results = self.cursor.fetchall()
             
             stock_codes = [row[0] for row in results]
-            logger.info(f"题材 {theme_code} 包含 {len(stock_codes)} 只股票")
+            logger.info(f"通达信板块 {theme_code} 包含 {len(stock_codes)} 只股票")
             
             return stock_codes
             
         except Exception as e:
-            logger.error(f"获取题材成分股失败: {e}")
+            logger.error(f"获取通达信板块成分股失败: {e}")
             return []
         finally:
             self._close_db_connection()
