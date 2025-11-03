@@ -197,7 +197,7 @@ class ThemeCleaner:
                     # 合并基础信息和行情数据
                     df_merged = pd.merge(
                         df_concept_info[['ts_code', 'name', 'idx_count']], 
-                        df_daily[['ts_code', 'trade_date', 'pct_change', 'limit_up_num']], 
+                        df_daily[['ts_code', 'trade_date', 'pct_change', 'limit_up_num', 'close', 'open', 'high', 'low', 'turnover_rate']], 
                         on='ts_code', 
                         how='inner'
                     )
@@ -293,7 +293,12 @@ class ThemeCleaner:
                 'ts_code': 'code',
                 'name': 'name',
                 'limit_up_num': 'z_t_num',  # 使用成分个数作为z_t_num
-                'pct_change': 'pct_change'
+                'pct_change': 'pct_change',
+                'close': 'close',
+                'open': 'open',
+                'high': 'high',
+                'low': 'low',
+                'turnover_rate': 'turnover_rate'
             })
             
             # 转换日期格式
@@ -303,6 +308,13 @@ class ThemeCleaner:
             df_cleaned['z_t_num'] = pd.to_numeric(df_cleaned['z_t_num'], errors='coerce').fillna(0).astype('int')
             df_cleaned['pct_change'] = pd.to_numeric(df_cleaned['pct_change'], errors='coerce').fillna(0.0)
             
+            # 处理行情数据字段
+            df_cleaned['close'] = pd.to_numeric(df_cleaned['close'], errors='coerce')
+            df_cleaned['open'] = pd.to_numeric(df_cleaned['open'], errors='coerce')
+            df_cleaned['high'] = pd.to_numeric(df_cleaned['high'], errors='coerce')
+            df_cleaned['low'] = pd.to_numeric(df_cleaned['low'], errors='coerce')
+            df_cleaned['turnover_rate'] = pd.to_numeric(df_cleaned['turnover_rate'], errors='coerce')
+            
             # up_num字段用0填充（按要求）
             df_cleaned['up_num'] = 0
             
@@ -311,7 +323,7 @@ class ThemeCleaner:
             df_cleaned['rank_value'] = range(1, len(df_cleaned) + 1)
             
             # 选择需要的列
-            df_cleaned = df_cleaned[['trade_date', 'code', 'name', 'z_t_num', 'up_num', 'rank_value']]
+            df_cleaned = df_cleaned[['trade_date', 'code', 'name', 'z_t_num', 'up_num', 'rank_value', 'close', 'open', 'high', 'low', 'pct_change', 'turnover_rate']]
             
             # 去除重复数据
             df_cleaned = df_cleaned.drop_duplicates(subset=['trade_date', 'code'])
@@ -334,13 +346,19 @@ class ThemeCleaner:
                 # 构建插入SQL
                 sql = """
                 INSERT INTO trade_market_theme 
-                (trade_date, code, name, z_t_num, up_num, rank_value)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                (trade_date, code, name, z_t_num, up_num, rank_value, close, open, high, low, pct_change, turnover_rate)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON DUPLICATE KEY UPDATE
                 name = VALUES(name),
                 z_t_num = VALUES(z_t_num),
                 up_num = VALUES(up_num),
                 rank_value = VALUES(rank_value),
+                close = VALUES(close),
+                open = VALUES(open),
+                high = VALUES(high),
+                low = VALUES(low),
+                pct_change = VALUES(pct_change),
+                turnover_rate = VALUES(turnover_rate),
                 updated_time = CURRENT_TIMESTAMP
                 """
                 
@@ -353,7 +371,13 @@ class ThemeCleaner:
                         row['name'],
                         row['z_t_num'],
                         row['up_num'],
-                        row['rank_value']
+                        row['rank_value'],
+                        row['close'],
+                        row['open'],
+                        row['high'],
+                        row['low'],
+                        row['pct_change'],
+                        row['turnover_rate']
                     ))
                 
                 # 批量插入
@@ -396,7 +420,7 @@ class ThemeCleaner:
         try:
             with self.connection.cursor() as cursor:
                 sql = """
-                SELECT trade_date, code, name, z_t_num, up_num, rank_value
+                SELECT trade_date, code, name, z_t_num, up_num, rank_value, close, open, high, low, pct_change, turnover_rate
                 FROM trade_market_theme
                 WHERE trade_date = %s
                 ORDER BY z_t_num DESC
@@ -407,7 +431,7 @@ class ThemeCleaner:
                 
                 if results:
                     df = pd.DataFrame(results, columns=[
-                        'trade_date', 'code', 'name', 'z_t_num', 'up_num', 'rank_value'
+                        'trade_date', 'code', 'name', 'z_t_num', 'up_num', 'rank_value', 'close', 'open', 'high', 'low', 'pct_change', 'turnover_rate'
                     ])
                     logger.info(f"查询到{len(df)}条题材数据")
                     return df
