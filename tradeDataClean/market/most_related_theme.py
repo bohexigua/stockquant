@@ -22,6 +22,7 @@ sys.path.append(project_root)
 import pandas as pd
 import pymysql
 import tushare as ts
+import re
 from config import config
 
 # 创建logs目录
@@ -179,6 +180,34 @@ class MostRelatedThemeCleaner:
         s = str(text).strip()
         return s[:max_len]
 
+    @staticmethod
+    def _status_to_strength(status: Optional[str]) -> Optional[str]:
+        if status is None:
+            return None
+        s = str(status).strip()
+        if not s:
+            return None
+        strength = None
+        m_days_boards = re.search(r"(\d+)\s*天\s*(\d+)\s*板", s)
+        if m_days_boards:
+            try:
+                strength = int(m_days_boards.group(2))
+            except Exception:
+                strength = None
+        else:
+            if '首板' in s:
+                strength = 1
+            else:
+                m = re.search(r"(\d+)\s*连板", s)
+                if m:
+                    try:
+                        strength = int(m.group(1))
+                    except Exception:
+                        strength = None
+        if strength is None:
+            return None
+        return f"{strength}_{s}"
+
     def fetch_most_related_theme_by_date(self, trade_date: str, tag: str = '涨停') -> pd.DataFrame:
         """获取指定交易日的个股最相关题材数据"""
         try:
@@ -186,7 +215,7 @@ class MostRelatedThemeCleaner:
             df = self.tushare_api.kpl_list(
                 trade_date=trade_date,
                 tag=tag,
-                fields='ts_code,name,trade_date,lu_desc,theme'
+                fields='ts_code,name,trade_date,lu_desc,theme,status'
             )
             if df is None or df.empty:
                 logger.info(f"{trade_date}未返回kpl_list数据")
@@ -207,12 +236,14 @@ class MostRelatedThemeCleaner:
             # 清洗字段
             df_cleaned['most_related_theme_name'] = df_cleaned['most_related_theme_name'].apply(lambda x: self._truncate(x, 100))
             df_cleaned['all_themes_name'] = df_cleaned['all_themes_name'].apply(self._sanitize_themes)
+            strength_series = df['status'].apply(self._status_to_strength)
+            df_cleaned['most_related_theme_strength'] = strength_series
 
             # 去除重复（同日同股）
             df_cleaned = df_cleaned.drop_duplicates(subset=['trade_date', 'stock_code'])
 
             # 仅保留入库所需字段
-            df_cleaned = df_cleaned[['trade_date', 'stock_code', 'stock_name', 'most_related_theme_name', 'all_themes_name']]
+            df_cleaned = df_cleaned[['trade_date', 'stock_code', 'stock_name', 'most_related_theme_name', 'most_related_theme_strength', 'all_themes_name']]
 
             logger.info(f"{trade_date}清洗后记录数: {len(df_cleaned)}")
             return df_cleaned
@@ -229,11 +260,12 @@ class MostRelatedThemeCleaner:
             with self.connection.cursor() as cursor:
                 sql = (
                     "INSERT INTO trade_factor_most_related_theme "
-                    "(trade_date, stock_code, stock_name, most_related_theme_name, all_themes_name) "
-                    "VALUES (%s, %s, %s, %s, %s) "
+                    "(trade_date, stock_code, stock_name, most_related_theme_name, most_related_theme_strength, all_themes_name) "
+                    "VALUES (%s, %s, %s, %s, %s, %s) "
                     "ON DUPLICATE KEY UPDATE "
                     "stock_name = VALUES(stock_name), "
                     "most_related_theme_name = VALUES(most_related_theme_name), "
+                    "most_related_theme_strength = VALUES(most_related_theme_strength), "
                     "all_themes_name = VALUES(all_themes_name), "
                     "updated_time = CURRENT_TIMESTAMP"
                 )
@@ -244,6 +276,7 @@ class MostRelatedThemeCleaner:
                         row['stock_code'],
                         row['stock_name'],
                         row['most_related_theme_name'],
+                        row['most_related_theme_strength'],
                         row['all_themes_name']
                     )
                     for _, row in df.iterrows()
