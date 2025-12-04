@@ -59,6 +59,7 @@ class DataCleanScheduler:
                 'stock_fund_flow.py',  # 股票日资金流向数据
                 'dc_concept.py',  # 东财概念板块
                 'theme.py',  # 主题板块
+                'most_related_theme.py',  # 榜单关联板块
                 'dc_stock_hot.py',  # 东财热门股票
                 'stock_auction_daily.py',  # 股票集合竞价
                 'stock_60min.py',  # 股票60分钟数据
