@@ -63,6 +63,7 @@ class DataCleanScheduler:
                 'dc_stock_hot.py',  # 东财热门股票
                 'stock_auction_daily.py',  # 股票集合竞价
                 'stock_60min.py',  # 股票60分钟数据
+                'stock_5min.py',  # 股票5分钟数据
                 'stock_cyq_daily.py',  # 股票筹码分布
                 'index_daily.py'  # 指数日行情
             ]

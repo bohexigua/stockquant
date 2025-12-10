@@ -78,6 +78,18 @@ class BuyStrategy:
                 return False
             return float(high) == float(low)
 
+    def prev_day_has_main_lift(self, code: str) -> bool:
+        try:
+            with self.db.cursor() as c:
+                c.execute(
+                    "SELECT COUNT(*) FROM trade_factor_stock_intraday_momentum WHERE code=%s AND trade_date=(SELECT MAX(trade_date) FROM trade_factor_stock_intraday_momentum WHERE code=%s AND trade_date<CURDATE()) AND main_action='主力拉升'",
+                    (code, code),
+                )
+                r = c.fetchone()
+                return bool(r and int(r[0]) > 0)
+        except Exception:
+            return False
+
     def sector_has_strong_movers(self, code: str):
         with self.db.cursor() as c:
             c.execute(
@@ -134,6 +146,12 @@ class BuyStrategy:
         return strong, max_rise, names
 
     def volume_health(self, df: pd.DataFrame, window: int = 5) -> bool:
+        """判断量能健康
+        规则摘要：
+        - 最近 window 天数据，至少 3 天
+        - 收盘价连涨（逐日递增），且放量天数不超过 1 天的缩量
+        - 存在最近的“实体大阳线”（涨幅≥4%），最新收盘价不低于该阳线的开盘价（不回到阳线实体下方）
+        """
         if df is None or df.empty:
             return False
         k = min(window, len(df))
@@ -145,8 +163,8 @@ class BuyStrategy:
         vols = pd.to_numeric(tail['vol'], errors='coerce')
         if closes.isna().any() or opens.isna().any() or vols.isna().any():
             return False
-        up_all = True
-        dec_cnt = 0
+        up_all = True  # 是否逐日收盘价递增
+        dec_cnt = 0    # 缩量天数计数
         for i in range(1, len(tail)):
             if not (closes.iloc[i] > closes.iloc[i-1]):
                 up_all = False
@@ -155,9 +173,9 @@ class BuyStrategy:
                 dec_cnt += 1
         if not up_all:
             return False
-        if dec_cnt > 1:
+        if dec_cnt > 1:  # 允许最多 1 天缩量
             return False
-        big_idx = None
+        big_idx = None  # 最近的“实体大阳线”索引
         for i in range(len(tail)-1, -1, -1):
             o = opens.iloc[i]
             c = closes.iloc[i]
@@ -169,6 +187,7 @@ class BuyStrategy:
         if big_idx is not None:
             last_close = closes.iloc[-1]
             bottom = opens.iloc[big_idx]
+            # 最新收盘不应跌回该阳线开盘价之下
             if not (last_close >= bottom):
                 return False
         return True
@@ -192,6 +211,9 @@ class BuyStrategy:
             return None
         if self.prev_day_is_one_word(code):
             self.write_strategy_evaluation(code, stock_name, 'BUY', 0, '前一日一字板')
+            return None
+        if not self.prev_day_has_main_lift(code):
+            self.write_strategy_evaluation(code, stock_name, 'BUY', 0, '前一日无主力拉升')
             return None
         ok, strong_count, max_peer_rise, theme1, strong1, theme2, strong2, names1, names2 = self.sector_has_strong_movers(code)
         if not ok:
@@ -239,6 +261,6 @@ class BuyStrategy:
         pre_ratio = self.get_preopen_volume_ratio(code)
         list1 = ','.join(names1) if names1 else '无'
         list2 = ','.join(names2) if names2 else '无'
-        reason = f"梯队({theme1})强势:{strong1}只[{list1}];梯队({theme2})强势:{strong2}只[{list2}];最大涨幅:{max_peer_rise:.2%};量能健康;竞价量能:{pre_ratio:.2}≥昨量0.01;竞价涨幅:{rise:.2%}≤5%;近5日涨幅:{change5:.2%},仓位:{pct:.0%}"
+        reason = f"梯队({theme1})强势:{strong1}只[{list1}];梯队({theme2})强势:{strong2}只[{list2}];梯队最大涨幅:{max_peer_rise:.2%};量能健康;昨主力拉升;竞价量能:{pre_ratio:.2}≥昨量0.01;竞价涨幅:{rise:.2%}≤5%;近5日涨幅:{change5:.2%},仓位:{pct:.0%}"
         self.write_strategy_evaluation(code, stock_name, 'BUY', 1, reason)
         return trade_dt, price, qty_to_buy, reason

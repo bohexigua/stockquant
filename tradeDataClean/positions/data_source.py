@@ -22,7 +22,7 @@ class TickPreopenDataSource(BasePreopenDataSource):
     def get_preopen_info(self, code: str):
         with self.db.cursor() as c:
             c.execute(
-                "SELECT trade_date, trade_time, price FROM trade_market_stock_tick WHERE code=%s AND trade_time<='09:30:00' AND trade_date=CURDATE() ORDER BY trade_time DESC LIMIT 1",
+                "SELECT trade_date, trade_time, price FROM trade_market_stock_tick WHERE code=%s AND trade_time<='10:15:00' AND trade_date=CURDATE() ORDER BY trade_time DESC LIMIT 1",
                 (code,),
             )
             trow = c.fetchone()
@@ -50,7 +50,7 @@ class TickPreopenDataSource(BasePreopenDataSource):
     def get_preopen_volume_ratio(self, code: str) -> float:
         with self.db.cursor() as c:
             c.execute(
-                "SELECT COALESCE(SUM(volume),0) FROM trade_market_stock_tick WHERE code=%s AND trade_date=CURDATE() AND trade_time<='09:30:00'",
+                "SELECT volume FROM trade_market_stock_tick WHERE code=%s AND trade_date=CURDATE() AND trade_time<='10:15:00'",
                 (code,),
             )
             vrow = c.fetchone()
@@ -70,7 +70,7 @@ class TickPreopenDataSource(BasePreopenDataSource):
     def peer_preopen_rise(self, code: str):
         with self.db.cursor() as c:
             c.execute(
-                "SELECT trade_date, trade_time, price, pre_close FROM trade_market_stock_tick WHERE code=%s AND trade_date=CURDATE() AND trade_time<='09:30:00' ORDER BY trade_time DESC LIMIT 1",
+                "SELECT trade_date, trade_time, price, pre_close FROM trade_market_stock_tick WHERE code=%s AND trade_date=CURDATE() AND trade_time<='10:15:00' ORDER BY trade_time DESC LIMIT 1",
                 (code,),
             )
             kt = c.fetchone()
@@ -109,7 +109,7 @@ class Stock60MinPreopenDataSource(BasePreopenDataSource):
     def get_preopen_info(self, code: str):
         with self.db.cursor() as c:
             c.execute(
-                "SELECT trade_time, open, close FROM trade_market_stock_60min WHERE code=%s AND trade_date=%s ORDER BY trade_time ASC LIMIT 1",
+                "SELECT trade_time, open, close FROM trade_market_stock_5min WHERE code=%s AND trade_date=%s ORDER BY trade_time ASC LIMIT 1",
                 (code, self.target_date),
             )
             r = c.fetchone()
@@ -136,7 +136,7 @@ class Stock60MinPreopenDataSource(BasePreopenDataSource):
     def get_preopen_volume_ratio(self, code: str) -> float:
         with self.db.cursor() as c:
             c.execute(
-                "SELECT COALESCE(SUM(vol),0) FROM trade_market_stock_60min WHERE code=%s AND trade_date=%s AND trade_time<='09:30:00'",
+                "SELECT vol FROM trade_market_stock_5min WHERE code=%s AND trade_date=%s AND trade_time<='10:15:00'",
                 (code, self.target_date),
             )
             vrow = c.fetchone()
@@ -151,12 +151,12 @@ class Stock60MinPreopenDataSource(BasePreopenDataSource):
             y_vol = float(yrow[0])
             if y_vol <= 0:
                 return 0.0
-            return pre_vol / y_vol
+            return pre_vol / 100 / y_vol
 
     def peer_preopen_rise(self, code: str):
         with self.db.cursor() as c:
             c.execute(
-                "SELECT trade_time, open, close FROM trade_market_stock_60min WHERE code=%s AND trade_date=%s ORDER BY trade_time ASC LIMIT 1",
+                "SELECT trade_time, open, close FROM trade_market_stock_5min WHERE code=%s AND trade_date=%s ORDER BY trade_time ASC LIMIT 1",
                 (code, self.target_date),
             )
             r = c.fetchone()
@@ -179,7 +179,7 @@ class Stock60MinPreopenDataSource(BasePreopenDataSource):
     def get_stock_name(self, code: str):
         with self.db.cursor() as c:
             c.execute(
-                "SELECT name FROM trade_market_stock_60min WHERE code=%s AND trade_date=%s ORDER BY trade_time ASC LIMIT 1",
+                "SELECT name FROM trade_market_stock_5min WHERE code=%s AND trade_date=%s ORDER BY trade_time ASC LIMIT 1",
                 (code, self.target_date),
             )
             r = c.fetchone()

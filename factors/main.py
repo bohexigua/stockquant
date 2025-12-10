@@ -54,7 +54,7 @@ class FactorCalculationScheduler:
         
         # 定义脚本执行顺序
         self.script_order = {
-            'stock': ['investment.py', 'momentum.py', 'stock_sector_correlation.py'],
+            'stock': ['investment.py', 'momentum.py', 'stock_sector_correlation.py', 'intraday_momentum.py'],
             'root': [],
         }
     
