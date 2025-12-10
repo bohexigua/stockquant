@@ -297,8 +297,8 @@ def main():
         if args.trade_date:
             trade_date = datetime.strptime(args.trade_date, "%Y%m%d")
         else:
-            # trade_date = datetime.now()
-            trade_date = datetime.strptime("20251121", "%Y%m%d")
+            trade_date = datetime.now()
+            # trade_date = datetime.strptime("20251126", "%Y%m%d")
 
         # 生成分析报告
         generator.generate_sector_analysis(trade_date)

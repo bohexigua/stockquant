@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# 每日凌晨4点执行个股近期最相关题材清洗脚本
+# 每天早上8:20执行个股近期最相关题材清洗脚本
 # Cron示例：在crontab中加入以下条目
-# 0 4 * * * /Users/zwldqp/work/stockquant/most_related_theme_daily.sh
+# 20 8 * * * /Users/zwldqp/work/stockquant/early_morning_daily_task.sh
 
 # 设置项目根目录
 PROJECT_ROOT="/Users/zwldqp/work/stockquant"
@@ -13,11 +13,11 @@ mkdir -p "$LOG_DIR"
 
 # 设置日志文件名（带时间戳）
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-LOG_FILE="$LOG_DIR/most_related_theme_$TIMESTAMP.log"
+LOG_FILE="$LOG_DIR/early_morning_daily_task_$TIMESTAMP.log"
 
 # 记录任务开始时间
 echo "========================================" >> "$LOG_FILE"
-echo "most_related_theme 任务开始执行: $(date)" >> "$LOG_FILE"
+echo "early_morning_daily_task 任务开始执行: $(date)" >> "$LOG_FILE"
 echo "========================================" >> "$LOG_FILE"
 
 # 切换到项目目录
