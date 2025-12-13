@@ -147,12 +147,48 @@ class StockTickWriter:
             "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,"
             "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
         )
-        sql_del = "DELETE FROM trade_market_stock_tick WHERE code=%s AND trade_date=%s"
+        sql_get_two = (
+            "SELECT trade_time FROM trade_market_stock_tick WHERE code=%s AND trade_date=%s ORDER BY trade_time DESC LIMIT 2"
+        )
+        sql_del_top1 = (
+            "DELETE FROM trade_market_stock_tick WHERE code=%s AND trade_date=%s AND trade_time=%s"
+        )
         try:
             with self.connection.cursor() as cursor:
                 for rec in records:
-                    td, code = rec[0], rec[1]
-                    cursor.execute(sql_del, (code, td))
+                    td, code, tt_new = rec[0], rec[1], rec[3]
+                    cursor.execute(sql_get_two, (code, td))
+                    rows = cursor.fetchall()
+                    if rows and len(rows) >= 2:
+                        t1 = rows[0][0]
+                        t2 = rows[1][0]
+                        def _to_time_obj(t):
+                            try:
+                                if hasattr(t, 'time'):
+                                    return t.time()
+                                from datetime import datetime as _dt, timedelta as _td
+                                import pandas as _pd
+                                if isinstance(t, _td):
+                                    return (_dt.min + t).time()
+                                if isinstance(t, _pd.Timedelta):
+                                    return (_dt.min + t.to_pytimedelta()).time()
+                                if isinstance(t, str):
+                                    try:
+                                        return _dt.strptime(t, '%H:%M:%S').time()
+                                    except Exception:
+                                        return _dt.strptime(t, '%H:%M').time()
+                                return t
+                            except Exception:
+                                return t
+                        t1o = _to_time_obj(t1)
+                        t2o = _to_time_obj(t2)
+                        def _sec(t):
+                            return t.hour*3600 + t.minute*60 + t.second
+                        if t1o and t2o:
+                            diff = _sec(t1o) - _sec(t2o)
+                            if diff < 300:
+                                # 删除最新一条，再插入当前记录
+                                cursor.execute(sql_del_top1, (code, td, t1o))
                     cursor.execute(sql_ins, rec)
             logger.info(f'成功写入{len(records)}条tick记录')
             return True
