@@ -81,7 +81,7 @@ def check(strategy, code: str, stock_name: str, trade_date: str = None):
                     return '-'
             dd = trade_date or '当日'
             reason = f"{dd}主力: 拉升{lift_cnt}次/出货{dump_cnt}次, 净拉升{net_lift}; 最后动作:{last_action or '无'}; 最后拉升:{_fmt_time(last_lift_time)} 最后出货:{_fmt_time(last_dump_time)}"
-            if net_lift >= 0:
+            if (net_lift >= 0) or (lift_cnt >= 3):
                 return True, reason, data
             return False, reason, data
     except Exception:

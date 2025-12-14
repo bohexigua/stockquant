@@ -1,23 +1,21 @@
 def check(strategy, code: str, stock_name: str, df, trade_date: str = None):
-    # 检查近5日量价健康度：
-    # 1) 收盘价序列整体抬升（最近K天逐日上涨）
-    # 2) 量能不显著递减（递减天数不超过1天）
-    # 3) 若出现强阳线（涨幅≥4%），则最新收盘不应跌破该强阳线的开盘价
     try:
         if df is None or df.empty:
-            return False, '量能不健康', {'trade_date': trade_date}
+            vol_summary = '量能:数据缺失'
+            return False, vol_summary, {'trade_date': trade_date, 'vol_summary': vol_summary}
         window = 5
         k = min(window, len(df))
         tail = df.tail(k)
         if len(tail) < 3:
-            return False, '量能不健康', {'trade_date': trade_date}
+            vol_summary = '量能:数据不足'
+            return False, vol_summary, {'trade_date': trade_date, 'vol_summary': vol_summary}
         import pandas as pd
-        # 数值化转换，忽略异常值（coerce）
         closes = pd.to_numeric(tail['close'], errors='coerce')
         opens = pd.to_numeric(tail['open'], errors='coerce')
         vols = pd.to_numeric(tail['vol'], errors='coerce')
         if closes.isna().any() or opens.isna().any() or vols.isna().any():
-            return False, '量能不健康', {'trade_date': trade_date}
+            vol_summary = '量能:数据异常'
+            return False, vol_summary, {'trade_date': trade_date, 'vol_summary': vol_summary}
         # 收盘价逐日抬升与量能递减统计
         # 计算末端连续连升天数（以收盘价为准）
         rise_len = 1
@@ -27,7 +25,8 @@ def check(strategy, code: str, stock_name: str, df, trade_date: str = None):
             else:
                 break
         if rise_len < 2:
-            return False, '量能不健康', {'trade_date': trade_date, 'vol_summary': f"量能:连升{rise_len}日"}
+            vol_summary = f"量能:连升{rise_len}日"
+            return False, vol_summary, {'trade_date': trade_date, 'vol_summary': vol_summary}
         # 在该连续上涨区间内统计量能放大/缩量天数（相邻比较）
         start_idx = len(tail) - rise_len
         vol_inc = 0
@@ -54,12 +53,13 @@ def check(strategy, code: str, stock_name: str, df, trade_date: str = None):
         elif rise_len >= 3:
             cond_ok = (vol_inc >= 2 and vol_dec <= 1)
         if not cond_ok:
-            return False, '量能不健康', {
+            base_summary = f"量能:连升{rise_len}日,放大{vol_inc}天,缩量{vol_dec}天"
+            return False, base_summary, {
                 'trade_date': trade_date,
                 'rise_len': rise_len,
                 'vol_inc': vol_inc,
                 'vol_dec': vol_dec,
-                'vol_summary': f"量能:连升{rise_len}日,放大{vol_inc}天,缩量{vol_dec}天",
+                'vol_summary': base_summary,
             }
         # 回溯最近的强阳线（涨幅≥4%）
         big_idx = None
@@ -78,21 +78,24 @@ def check(strategy, code: str, stock_name: str, df, trade_date: str = None):
             bottom = opens.iloc[big_idx]
             support_ok = bool(last_close >= bottom)
             if not support_ok:
-                return False, '量能不健康', {
+                vol_summary = f"量能:连升{rise_len}日,放大{vol_inc}天,缩量{vol_dec}天;强阳支撑:无"
+                return False, vol_summary, {
                     'trade_date': trade_date,
                     'rise_len': rise_len,
                     'vol_inc': vol_inc,
                     'vol_dec': vol_dec,
                     'support_ok': support_ok,
-                    'vol_summary': f"量能:连升{rise_len}日,放大{vol_inc}天,缩量{vol_dec}天;强阳支撑:无",
+                    'vol_summary': vol_summary,
                 }
-        return True, '', {
+        vol_summary = f"量能:连升{rise_len}日,放大{vol_inc}天,缩量{vol_dec}天;强阳支撑:{'有效' if support_ok else '无'}"
+        return True, vol_summary, {
             'trade_date': trade_date,
             'rise_len': rise_len,
             'vol_inc': vol_inc,
             'vol_dec': vol_dec,
             'support_ok': support_ok,
-            'vol_summary': f"量能:连升{rise_len}日,放大{vol_inc}天,缩量{vol_dec}天;强阳支撑:{'有效' if support_ok else '无'}",
+            'vol_summary': vol_summary,
         }
     except Exception:
-        return False, '量能不健康', {'trade_date': trade_date}
+        vol_summary = '量能:计算异常'
+        return False, vol_summary, {'trade_date': trade_date, 'vol_summary': vol_summary}
