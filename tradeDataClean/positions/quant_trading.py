@@ -121,12 +121,7 @@ class TradingScheduler:
 
     def decide_and_execute(self, code: str, name: str):
         qty_before, cash_before, init_cash = self.position_before(code)
-        if self.test_mode:
-            from tradeDataClean.positions.data_source import Stock60MinPreopenDataSource
-            ds = Stock60MinPreopenDataSource(self.db, self.test_date or datetime.now().strftime('%Y-%m-%d'))
-            strat = BuyStrategy(self.db, data_source=ds)
-        else:
-            strat = BuyStrategy(self.db)
+        strat = BuyStrategy(self.db)
         res = strat.decide_buy(code, cash_before, name)
         if res is None:
             return

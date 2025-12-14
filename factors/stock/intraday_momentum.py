@@ -99,7 +99,7 @@ class IntradayMomentumCalculator:
 
             if ret >= 0.01 and vol_ratio >= 1.5:
                 return '主力拉升', f"5min涨幅:{ret:.2%}, 量能倍数:{vol_ratio:.2f}"
-            if ret <= -0.01 and vol_ratio >= 1.5:
+            if ret <= -0.007 and vol_ratio >= 1:
                 return '主力出货', f"5min跌幅:{ret:.2%}, 量能倍数:{vol_ratio:.2f}"
             return '无明显动作', f"涨幅:{ret:.2%}, 量能倍数:{vol_ratio:.2f}"
         except Exception:

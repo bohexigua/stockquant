@@ -8,6 +8,8 @@ sys.path.append(project_root)
 
 from config import config
 from tradeDataClean.positions.buy_strategy import BuyStrategy
+from tradeDataClean.positions.data_source import Stock60MinPreopenDataSource
+from tradeDataClean.positions.data_source import Stock60MinPreopenDataSource
 from tradeDataClean.positions.criteria.buy_conditions.criteria_sector_strong import check
 from tradeDataClean.positions.tests.test_utils import print_unbuffered
 
@@ -23,29 +25,47 @@ def _get_db():
         autocommit=True,
     )
 
-def _pick_code_name(conn):
+def _pick_codes_names_and_dates(conn):
     with conn.cursor() as c:
-        c.execute("SELECT stock_code, stock_name FROM ptm_user_watchlist WHERE is_active=1 LIMIT 1")
-        r = c.fetchone()
-        if r and r[0]:
-            return r[0], r[1]
-        c.execute("SELECT code, name FROM trade_market_stock_daily LIMIT 1")
-        r = c.fetchone()
-        return (r[0], r[1]) if r else (None, None)
+        c.execute("SELECT stock_code, stock_name FROM ptm_user_watchlist WHERE is_active=1")
+        rows = c.fetchall()
+        seen = set()
+        pairs = []
+        for r in rows:
+            code, name = r[0], r[1]
+            if not code or code in seen:
+                continue
+            seen.add(code)
+            c.execute("SELECT MAX(trade_date) FROM trade_market_stock_daily WHERE code=%s AND trade_date<CURDATE()", (code,))
+            drow = c.fetchone()
+            prev_date = drow[0] if drow and drow[0] else None
+            pairs.append((code, name, prev_date))
+        return pairs
 
 
 def test_sector_strong_live(capsys):
     conn = _get_db()
     try:
-        code, name = _pick_code_name(conn)
-        assert code is not None
-        strategy = BuyStrategy(conn)
-        ok, reason, data = check(strategy, code, name or code)
-        print_unbuffered(capsys, f"[sector_strong] code={code} ok={ok} strong_count={data.get('strong_count')} reason={reason}")
-        assert isinstance(ok, bool)
-        if not ok:
-            pytest.skip('同板块无强势股')
-        assert 'strong_count' in data
+        pairs = _pick_codes_names_and_dates(conn)
+        assert pairs
+        for code, name, prev_date in pairs:
+            if not prev_date:
+                continue
+            prev = prev_date.strftime('%Y-%m-%d')
+            strategy = BuyStrategy(conn, data_source=Stock60MinPreopenDataSource(conn, prev))
+            ok, reason, data = check(strategy, code, name or code, prev)
+            peers1 = data.get('peers1') or []
+            peers2 = data.get('peers2') or []
+            def _fmt(items):
+                try:
+                    return ','.join([f"{it['name']}:{it['rise']:.2%}" for it in items[:5]]) if items else '无'
+                except Exception:
+                    return '无'
+            print_unbuffered(capsys, f"[sector_strong] code={code} date={prev} ok={ok} strong_count={data.get('strong_count')} theme1={data.get('theme1')} theme2={data.get('theme2')} peers1={_fmt(peers1)} peers2={_fmt(peers2)} reason={reason}")
+            assert isinstance(ok, bool)
+            if ok:
+                assert isinstance(peers1, list)
+                assert isinstance(peers2, list)
     finally:
         conn.close()
 

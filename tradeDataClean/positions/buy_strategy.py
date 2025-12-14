@@ -8,13 +8,37 @@ sys.path.append(project_root)
 
 
 class BuyStrategy:
-    def __init__(self, db, data_source=None):
+    def __init__(self, db):
         self.db = db
-        if data_source is None:
-            from tradeDataClean.positions.data_source import TickPreopenDataSource
-            self.ds = TickPreopenDataSource(db)
+    def _calc_layers_and_qty(self, sec: dict, cash_before: float, price: float):
+        strong_total = 0
+        try:
+            strong_total = int(sec.get('strong_count') or (sec.get('strong1', 0) + sec.get('strong2', 0)))
+        except Exception:
+            strong_total = (sec.get('strong1', 0) + sec.get('strong2', 0))
+        if strong_total >= 7:
+            layers = 5
+        elif strong_total >= 5:
+            layers = 4
+        elif strong_total >= 3:
+            layers = 3
         else:
-            self.ds = data_source
+            layers = 2
+        pct = layers / 10.0
+        qty_to_buy = int((cash_before * pct) // max(price, 0.01) // 100) * 100
+        return layers, pct, qty_to_buy
+
+    def _get_prev_trade_date(self, code: str):
+        try:
+            with self.db.cursor() as c:
+                c.execute(
+                    "SELECT MAX(trade_date) FROM trade_market_stock_daily WHERE code=%s AND trade_date<CURDATE()",
+                    (code,),
+                )
+                r = c.fetchone()
+                return r[0].strftime('%Y-%m-%d') if r and r[0] else None
+        except Exception:
+            return None
     def write_strategy_evaluation(self, code: str, stock_name: str, decision_side: str, will_execute: int, summary: str):
         try:
             with self.db.cursor() as c:
@@ -41,17 +65,6 @@ class BuyStrategy:
             df = pd.DataFrame(rows, columns=cols)
             return df[::-1]
 
-    def get_tick_preopen(self, code: str):
-        return self.ds.get_preopen_info(code)
-
-    def preopen_volume_ratio_ok(self, code: str) -> bool:
-        ratio = self.ds.get_preopen_volume_ratio(code)
-        return ratio >= 0.01
-
-    def get_preopen_volume_ratio(self, code: str) -> float:
-        return self.ds.get_preopen_volume_ratio(code)
-
-
     def decide_buy(self, code: str, cash_before: float, stock_name: str):
         df = self.get_daily_recent(code)
         from tradeDataClean.positions.criteria.buy_conditions.criteria_has_position import check as c_has_pos
@@ -62,23 +75,28 @@ class BuyStrategy:
         if df.empty:
             self.write_strategy_evaluation(code, stock_name, 'BUY', 0, '无日线数据')
             return None
+        prev_date = self._get_prev_trade_date(code)
         from tradeDataClean.positions.criteria.buy_conditions.criteria_prev_day_one_word import check as c_one_word
-        ok, reason, _ = c_one_word(self, code, stock_name)
+        ok, reason, _ = c_one_word(self, code, stock_name, prev_date)
         if not ok:
             self.write_strategy_evaluation(code, stock_name, 'BUY', 0, reason)
             return None
         from tradeDataClean.positions.criteria.buy_conditions.criteria_prev_day_main_lift import check as c_main_lift
-        ok, reason, _ = c_main_lift(self, code, stock_name)
+        ok, main_lift_reason, _ = c_main_lift(self, code, stock_name, prev_date)
         if not ok:
-            self.write_strategy_evaluation(code, stock_name, 'BUY', 0, reason)
+            self.write_strategy_evaluation(code, stock_name, 'BUY', 0, main_lift_reason)
             return None
         from tradeDataClean.positions.criteria.buy_conditions.criteria_sector_strong import check as c_sector
-        ok, reason, sec = c_sector(self, code, stock_name)
+        ok, reason, sec = c_sector(self, code, stock_name, prev_date)
+        peers1 = sec.get('peers1') or []
+        peers2 = sec.get('peers2') or []
+        list1 = ','.join([f"{p['name']}:{p['rise']:.2%}" for p in peers1[:5]]) if peers1 else '无'
+        list2 = ','.join([f"{p['name']}:{p['rise']:.2%}" for p in peers2[:5]]) if peers2 else '无'
         if not ok:
             self.write_strategy_evaluation(code, stock_name, 'BUY', 0, reason)
             return None
         from tradeDataClean.positions.criteria.buy_conditions.criteria_volume_health import check as c_vol
-        ok, reason, _ = c_vol(self, code, stock_name, df)
+        ok, reason, vol_data = c_vol(self, code, stock_name, df, prev_date)
         if not ok:
             self.write_strategy_evaluation(code, stock_name, 'BUY', 0, reason)
             return None
@@ -88,24 +106,12 @@ class BuyStrategy:
             self.write_strategy_evaluation(code, stock_name, 'BUY', 0, reason)
             return None
         tick = tkv['tick']
-        from tradeDataClean.positions.criteria.buy_conditions.criteria_preopen_volume import check as c_prevol
-        ok, reason, pv = c_prevol(self, code, stock_name)
-        if not ok:
-            self.write_strategy_evaluation(code, stock_name, 'BUY', 0, reason)
-            return None
         from tradeDataClean.positions.criteria.buy_conditions.criteria_preclose_and_rise import check as c_rise
         ok, reason, rv = c_rise(self, code, stock_name, tick)
         if not ok:
             self.write_strategy_evaluation(code, stock_name, 'BUY', 0, reason)
             return None
-        from tradeDataClean.positions.criteria.buy_conditions.criteria_qty_to_buy import check as c_qty
-        ok, reason, qv = c_qty(self, code, stock_name, df, cash_before, rv['price'], rv['rise'], pv['pre_ratio'])
-        if not ok:
-            self.write_strategy_evaluation(code, stock_name, 'BUY', 0, reason)
-            return None
-        pre_ratio = self.get_preopen_volume_ratio(code)
-        list1 = ','.join(sec['names1']) if sec['names1'] else '无'
-        list2 = ','.join(sec['names2']) if sec['names2'] else '无'
-        reason = f"梯队({sec['theme1']})强势:{sec['strong1']}只[{list1}];梯队({sec['theme2']})强势:{sec['strong2']}只[{list2}];梯队最大涨幅:{sec['max_peer_rise']:.2%};量能健康;昨主力拉升;竞价量能:{pre_ratio:.2}≥昨量0.01;竞价涨幅:{rv['rise']:.2%}≤5%;近5日涨幅:{qv['change5']:.2%},仓位:{qv['pct']:.0%}"
+        layers, pct, qty_to_buy = self._calc_layers_and_qty(sec, cash_before, rv['price'])
+        reason = f"梯队({sec['theme1']})强势:{sec['strong1']}只[{list1}];梯队({sec['theme2']})强势:{sec['strong2']}只[{list2}];{vol_data.get('vol_summary', '')};{main_lift_reason};竞价量能:{rv['pre_ratio']:.2}≥昨量0.01;竞价涨幅:{rv['rise']:.2%}≤5%;建议仓位:{layers}层"
         self.write_strategy_evaluation(code, stock_name, 'BUY', 1, reason)
-        return rv['trade_dt'], rv['price'], qv['qty_to_buy'], reason
+        return rv['trade_dt'], rv['price'], qty_to_buy, reason

@@ -1,18 +1,18 @@
-def check(strategy, code: str, stock_name: str):
+def check(strategy, code: str, stock_name: str, trade_date: str = None):
     try:
         with strategy.db.cursor() as c:
             c.execute(
-                "SELECT high, low FROM trade_market_stock_daily WHERE code=%s AND trade_date=(SELECT MAX(trade_date) FROM trade_market_stock_daily WHERE code=%s AND trade_date<CURDATE())",
-                (code, code),
+                "SELECT high, low FROM trade_market_stock_daily WHERE code=%s AND trade_date=%s",
+                (code, trade_date),
             )
             r = c.fetchone()
             if not r:
-                return True, '', {}
+                return True, '', {'trade_date': trade_date}
             high, low = r
             if high is None or low is None:
-                return True, '', {}
+                return True, '', {'trade_date': trade_date}
             if float(high) == float(low):
-                return False, '前一日一字板', {}
-            return True, '', {}
+                return False, '前一日一字板', {'trade_date': trade_date}
+            return True, '', {'trade_date': trade_date}
     except Exception:
-        return True, '', {}
+        return True, '', {'trade_date': trade_date}

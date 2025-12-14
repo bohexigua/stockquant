@@ -23,27 +23,37 @@ def _get_db():
         autocommit=True,
     )
 
-def _pick_code_name(conn):
+def _pick_codes_names_and_dates(conn):
     with conn.cursor() as c:
-        c.execute("SELECT stock_code, stock_name FROM ptm_user_watchlist WHERE is_active=1 LIMIT 1")
-        r = c.fetchone()
-        if r and r[0]:
-            return r[0], r[1]
-        c.execute("SELECT code, name FROM trade_market_stock_daily LIMIT 1")
-        r = c.fetchone()
-        return (r[0], r[1]) if r else (None, None)
+        c.execute("SELECT stock_code, stock_name FROM ptm_user_watchlist WHERE is_active=1")
+        rows = c.fetchall()
+        seen = set()
+        pairs = []
+        for r in rows:
+            code, name = r[0], r[1]
+            if not code or code in seen:
+                continue
+            seen.add(code)
+            c.execute("SELECT MAX(trade_date) FROM trade_market_stock_daily WHERE code=%s AND trade_date<CURDATE()", (code,))
+            drow = c.fetchone()
+            prev_date = drow[0] if drow and drow[0] else None
+            pairs.append((code, name, prev_date))
+        return pairs
 
 
 def test_volume_health_live(capsys):
     conn = _get_db()
     try:
-        code, name = _pick_code_name(conn)
-        assert code is not None
+        pairs = _pick_codes_names_and_dates(conn)
+        assert pairs
         strategy = BuyStrategy(conn)
-        df = strategy.get_daily_recent(code)
-        ok, reason, _ = check(strategy, code, name or code, df)
-        print_unbuffered(capsys, f"[volume_health] code={code} ok={ok} reason={reason}")
-        assert isinstance(ok, bool)
+        for code, name, prev_date in pairs:
+            if not prev_date:
+                continue
+            df = strategy.get_daily_recent(code)
+            ok, reason, data = check(strategy, code, name or code, df, prev_date.strftime('%Y-%m-%d'))
+            print_unbuffered(capsys, f"[volume_health] code={code} date={prev_date} ok={ok} reason={reason}")
+            assert isinstance(ok, bool)
     finally:
         conn.close()
 

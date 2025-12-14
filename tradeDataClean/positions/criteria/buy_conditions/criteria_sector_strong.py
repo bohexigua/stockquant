@@ -1,9 +1,9 @@
-def check(strategy, code: str, stock_name: str):
+def check(strategy, code: str, stock_name: str, trade_date: str = None):
     try:
         with strategy.db.cursor() as c:
             c.execute(
-                "SELECT all_themes_name, trade_date FROM trade_factor_most_related_theme WHERE stock_code=%s AND trade_date=(SELECT MAX(trade_date) FROM trade_factor_most_related_theme WHERE stock_code=%s AND trade_date<=CURDATE())",
-                (code, code),
+                "SELECT all_themes_name, trade_date FROM trade_factor_most_related_theme WHERE stock_code=%s ORDER BY trade_date DESC LIMIT 1",
+                (code,),
             )
             trow = c.fetchone()
             if not trow or not trow[0]:
@@ -17,9 +17,8 @@ def check(strategy, code: str, stock_name: str):
                 like = f"%{theme}%"
                 c.execute(
                     "SELECT t.stock_code FROM trade_factor_most_related_theme t "
-                    "INNER JOIN (SELECT stock_code, MAX(trade_date) AS max_date FROM trade_factor_most_related_theme GROUP BY stock_code) m "
-                    "ON t.stock_code=m.stock_code AND t.trade_date=m.max_date "
-                    "WHERE t.all_themes_name LIKE %s",
+                    "WHERE t.all_themes_name LIKE %s "
+                    "AND t.trade_date = (SELECT MAX(tt.trade_date) FROM trade_factor_most_related_theme tt WHERE tt.stock_code=t.stock_code)",
                     (like,),
                 )
                 rows = c.fetchall()
@@ -32,34 +31,58 @@ def check(strategy, code: str, stock_name: str):
             peers_t2 = _get_peers(theme2)
             def _count(peers: set):
                 strong = 0
-                max_rise = 0.0
-                names = []
+                items = []
                 for peer in peers:
-                    rise = strategy.ds.peer_preopen_rise(peer)
-                    if rise is None:
+                    # 参考 tick 数据源：取竞价末条（<=10:15）价格与昨收
+                    c.execute(
+                        "SELECT trade_date, trade_time, price, pre_close, name FROM trade_market_stock_tick "
+                        "WHERE code=%s AND trade_date=COALESCE(%s, CURDATE()) AND trade_time<='10:15:00' "
+                        "ORDER BY trade_time DESC LIMIT 1",
+                        (peer, trade_date),
+                    )
+                    kt = c.fetchone()
+                    if not kt:
                         continue
+                    try:
+                        price = float(kt[2]) if kt[2] is not None else None
+                    except Exception:
+                        price = None
+                    try:
+                        pre_close = float(kt[3]) if kt[3] is not None else None
+                    except Exception:
+                        pre_close = None
+                    nm = str(kt[4]) if len(kt) > 4 and kt[4] else peer
+                    if price is None or pre_close is None or pre_close <= 0:
+                        continue
+                    rise = (price - pre_close) / pre_close
+                    items.append({'name': nm, 'rise': rise})
                     if rise >= 0.095:
                         strong += 1
-                        nm = strategy.ds.get_stock_name(peer)
-                        names.append(nm)
-                    if rise > max_rise:
-                        max_rise = rise
-                return strong, max_rise, names
-            strong1, max1, names1 = _count(peers_t1)
-            strong2, max2, names2 = _count(peers_t2)
-            max_peer_rise = max(max1, max2)
+                items.sort(key=lambda x: x['rise'], reverse=True)
+                return strong, items
+            strong1, peers1 = _count(peers_t1)
+            strong2, peers2 = _count(peers_t2)
             strong_total = strong1 + strong2
             if strong_total <= 0:
-                return False, '同板块无强势股', {}
+                return False, '同板块无强势股', {
+                    'strong_count': strong_total,
+                    'theme1': theme1,
+                    'strong1': strong1,
+                    'theme2': theme2,
+                    'strong2': strong2,
+                    'peers1': peers1,
+                    'peers2': peers2,
+                    'trade_date': trade_date,
+                }
             return True, '', {
                 'strong_count': strong_total,
-                'max_peer_rise': max_peer_rise,
                 'theme1': theme1,
                 'strong1': strong1,
                 'theme2': theme2,
                 'strong2': strong2,
-                'names1': names1,
-                'names2': names2,
+                'peers1': peers1,
+                'peers2': peers2,
+                'trade_date': trade_date,
             }
     except Exception:
         return False, '同板块无强势股', {}

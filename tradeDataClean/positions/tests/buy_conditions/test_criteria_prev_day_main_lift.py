@@ -50,8 +50,8 @@ def test_prev_day_main_lift_live(capsys):
         assert pairs, 'no codes found'
         strategy = BuyStrategy(conn)
         for code, name, prev_date in pairs:
-            ok, reason, data = check(strategy, code, name or code)
-            print_unbuffered(capsys, f"[prev_day_main_lift] code={code} date={prev_date} ok={ok} lift_count={data.get('lift_count')} reason={reason}")
+            ok, reason, data = check(strategy, code, name or code, prev_date)
+            print_unbuffered(capsys, f"[prev_day_main_lift] code={code} date={prev_date} ok={ok} lift_count={data.get('lift_count')} dump_count={data.get('dump_count')} reason={reason}")
             assert isinstance(ok, bool)
     finally:
         conn.close()
