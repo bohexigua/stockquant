@@ -8,7 +8,7 @@ sys.path.append(project_root)
 
 from config import config
 from tradeDataClean.positions.buy_strategy import BuyStrategy
-from tradeDataClean.positions.criteria.buy_conditions.criteria_volume_health import check
+from tradeDataClean.positions.criteria.buy_conditions.criteria_prevday_volume_ratio import check as c_vr
 from tradeDataClean.positions.tests.test_utils import print_unbuffered
 
 
@@ -41,22 +41,21 @@ def _pick_codes_names_and_dates(conn):
         return pairs
 
 
-def test_volume_health_live(capsys):
+def test_prevday_volume_ratio_live(capsys):
     conn = _get_db()
     try:
         pairs = _pick_codes_names_and_dates(conn)
         assert pairs
-        strategy = BuyStrategy(conn)
         for code, name, prev_date in pairs:
             if not prev_date:
                 continue
-            df = strategy.get_daily_recent(code)
-            ok, reason, data = check(strategy, code, name or code, df, prev_date.strftime('%Y-%m-%d'))
-            print_unbuffered(capsys, f"[volume_health] code={code} date={prev_date} ok={ok} reason={reason}")
-            assert isinstance(ok, bool)
+            strategy = BuyStrategy(conn)
+            ok, reason, data = c_vr(strategy, code, name or code)
+            print_unbuffered(capsys, f"[prevday_volume_ratio] code={code} date={prev_date} ok={ok} ratio={data.get('ratio') if data else None} reason={reason}")
     finally:
         conn.close()
 
 
 if __name__ == '__main__':
     pytest.main([__file__])
+

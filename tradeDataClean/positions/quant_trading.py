@@ -125,10 +125,10 @@ class TradingScheduler:
         res = strat.decide_buy(code, cash_before, name)
         if res is None:
             return
-        trade_dt, price, qty_to_buy, trade_reason = res
+        trade_date, trade_time, price, qty_to_buy, trade_reason = res
         new_cash = cash_before - qty_to_buy * price
         pos_after = qty_before + qty_to_buy
-        self.write_position(trade_dt.date(), trade_dt, qty_to_buy, price, code, name, 'BUY', pos_after, None, trade_reason, new_cash)
+        self.write_position(trade_date, trade_time, qty_to_buy, price, code, name, 'BUY', pos_after, None, trade_reason, new_cash)
 
     def run_once(self):
         if not self.is_trading_day():

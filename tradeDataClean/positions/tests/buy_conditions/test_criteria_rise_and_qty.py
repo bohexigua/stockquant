@@ -8,8 +8,6 @@ sys.path.append(project_root)
 
 from config import config
 from tradeDataClean.positions.buy_strategy import BuyStrategy
-from tradeDataClean.positions.data_source import Stock60MinPreopenDataSource
-from tradeDataClean.positions.criteria.buy_conditions.criteria_tick_available import check as c_tick
 from tradeDataClean.positions.criteria.buy_conditions.criteria_preclose_and_rise import check as c_rise
 from tradeDataClean.positions.tests.test_utils import print_unbuffered
 
@@ -36,7 +34,7 @@ def _pick_codes_names_and_dates(conn):
             if not code or code in seen:
                 continue
             seen.add(code)
-            c.execute("SELECT MAX(trade_date) FROM trade_market_stock_daily WHERE code=%s AND trade_date<CURDATE()", (code,))
+            c.execute("SELECT MAX(trade_date) FROM trade_market_stock_daily WHERE code=%s AND trade_date<=CURDATE()", (code,))
             drow = c.fetchone()
             prev_date = drow[0] if drow and drow[0] else None
             pairs.append((code, name, prev_date))
@@ -51,13 +49,9 @@ def test_rise_and_qty_live(capsys):
         for code, name, prev_date in pairs:
             if not prev_date:
                 continue
-            strategy = BuyStrategy(conn, data_source=Stock60MinPreopenDataSource(conn, prev_date.strftime('%Y-%m-%d')))
-            ok, reason, tkv = c_tick(strategy, code, name or code)
-            print_unbuffered(capsys, f"[tick_available] code={code} date={prev_date} ok={ok} reason={reason}")
-            if not ok:
-                continue
-            ok2, reason2, rv = c_rise(strategy, code, name or code, tkv['tick'])
-            print_unbuffered(capsys, f"[preclose_and_rise] code={code} date={prev_date} ok={ok2} rise={rv.get('rise') if ok2 else None} reason={reason2}")
+            strategy = BuyStrategy(conn)
+            ok, reason, rv = c_rise(strategy, code, name or code)
+            print_unbuffered(capsys, f"[preclose_and_rise] code={code} date={prev_date} ok={ok} rise={rv.get('rise') if ok else None} reason={reason}")
     finally:
         conn.close()
 

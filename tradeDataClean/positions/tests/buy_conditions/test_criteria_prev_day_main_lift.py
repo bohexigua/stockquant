@@ -34,7 +34,7 @@ def _pick_codes_names(conn):
             code = r[0]
             name = r[1]
             c.execute(
-                "SELECT MAX(trade_date) FROM trade_market_stock_daily WHERE code=%s AND trade_date<CURDATE()",
+                "SELECT MAX(trade_date) FROM trade_market_stock_daily WHERE code=%s AND trade_date<=CURDATE()",
                 (code,),
             )
             drow = c.fetchone()

@@ -8,8 +8,6 @@ sys.path.append(project_root)
 
 from config import config
 from tradeDataClean.positions.buy_strategy import BuyStrategy
-from tradeDataClean.positions.data_source import Stock60MinPreopenDataSource
-from tradeDataClean.positions.data_source import Stock60MinPreopenDataSource
 from tradeDataClean.positions.criteria.buy_conditions.criteria_sector_strong import check
 from tradeDataClean.positions.tests.test_utils import print_unbuffered
 
@@ -36,7 +34,7 @@ def _pick_codes_names_and_dates(conn):
             if not code or code in seen:
                 continue
             seen.add(code)
-            c.execute("SELECT MAX(trade_date) FROM trade_market_stock_daily WHERE code=%s AND trade_date<CURDATE()", (code,))
+            c.execute("SELECT MAX(trade_date) FROM trade_market_stock_daily WHERE code=%s AND trade_date<=CURDATE()", (code,))
             drow = c.fetchone()
             prev_date = drow[0] if drow and drow[0] else None
             pairs.append((code, name, prev_date))
@@ -52,7 +50,7 @@ def test_sector_strong_live(capsys):
             if not prev_date:
                 continue
             prev = prev_date.strftime('%Y-%m-%d')
-            strategy = BuyStrategy(conn, data_source=Stock60MinPreopenDataSource(conn, prev))
+            strategy = BuyStrategy(conn)
             ok, reason, data = check(strategy, code, name or code, prev)
             peers1 = data.get('peers1') or []
             peers2 = data.get('peers2') or []

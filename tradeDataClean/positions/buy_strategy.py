@@ -100,18 +100,17 @@ class BuyStrategy:
         if not ok:
             self.write_strategy_evaluation(code, stock_name, 'BUY', 0, reason)
             return None
-        from tradeDataClean.positions.criteria.buy_conditions.criteria_tick_available import check as c_tick
-        ok, reason, tkv = c_tick(self, code, stock_name)
+        from tradeDataClean.positions.criteria.buy_conditions.criteria_prevday_volume_ratio import check as c_vr
+        ok, reason, vr = c_vr(self, code, stock_name)
         if not ok:
             self.write_strategy_evaluation(code, stock_name, 'BUY', 0, reason)
             return None
-        tick = tkv['tick']
         from tradeDataClean.positions.criteria.buy_conditions.criteria_preclose_and_rise import check as c_rise
-        ok, reason, rv = c_rise(self, code, stock_name, tick)
+        ok, reason, rv = c_rise(self, code, stock_name)
         if not ok:
             self.write_strategy_evaluation(code, stock_name, 'BUY', 0, reason)
             return None
         layers, pct, qty_to_buy = self._calc_layers_and_qty(sec, cash_before, rv['price'])
-        reason = f"梯队({sec['theme1']})强势:{sec['strong1']}只[{list1}];梯队({sec['theme2']})强势:{sec['strong2']}只[{list2}];{vol_data.get('vol_summary', '')};{main_lift_reason};竞价量能:{rv['pre_ratio']:.2}≥昨量0.01;竞价涨幅:{rv['rise']:.2%}≤5%;建议仓位:{layers}层"
+        reason = f"梯队({sec['theme1']})强势:{sec['strong1']}只[{list1}];梯队({sec['theme2']})强势:{sec['strong2']}只[{list2}];{vol_data.get('vol_summary', '')};{main_lift_reason};昨量比:{vr['ratio']:.2f}≥5;竞价量能:{rv['pre_ratio']:.2}≥昨量0.01;竞价涨幅:{rv['rise']:.2%}≤5%;建议仓位:{layers}层"
         self.write_strategy_evaluation(code, stock_name, 'BUY', 1, reason)
-        return rv['trade_dt'], rv['price'], qty_to_buy, reason
+        return rv['trade_date'], rv.get('trade_time'), rv['price'], qty_to_buy, reason
