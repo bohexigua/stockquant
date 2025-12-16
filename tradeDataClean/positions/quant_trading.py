@@ -99,12 +99,17 @@ class TradingScheduler:
                     "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (trade_date, trade_time, qty, price, code, name, side, trade_reason, pos_after, realized_pnl),
                 )
-                # upsert account balance
-                c.execute(
-                    "INSERT INTO ptm_quant_account_balances (account_code, trade_date, trade_time, current_cash) VALUES (%s,%s,%s,%s) "
-                    "ON DUPLICATE KEY UPDATE current_cash=VALUES(current_cash), trade_time=VALUES(trade_time)",
-                    ('DEFAULT', trade_time.date(), trade_time, new_cash),
-                )
+                # insert account balance; ignore duplicate on same (account_code, trade_date)
+                try:
+                    c.execute(
+                        "INSERT INTO ptm_quant_account_balances (account_code, trade_date, trade_time, current_cash) VALUES (%s,%s,%s,%s)",
+                        ('DEFAULT', trade_time.date(), trade_time, new_cash),
+                    )
+                except pymysql.err.IntegrityError as e:
+                    if getattr(e, 'args', [None])[0] == 1062:
+                        pass
+                    else:
+                        raise
                 try:
                     c.execute(
                         "INSERT INTO ptm_quant_strategy_evaluations (trade_date, stock_code, stock_name, strategy_name, decision_side, will_execute, summary) VALUES (%s,%s,%s,%s,%s,%s,%s)",
@@ -125,13 +130,9 @@ class TradingScheduler:
         trade_date, trade_time, price, qty_to_buy, trade_reason = res
         new_cash = cash_before - qty_to_buy * price
         pos_after = qty_before + qty_to_buy
+
         from datetime import datetime as _dt
-        if hasattr(trade_time, 'year') and hasattr(trade_time, 'hour'):
-            trade_dt = trade_time
-        elif hasattr(trade_time, 'hour'):
-            trade_dt = _dt.combine(trade_date, trade_time)
-        else:
-            trade_dt = _dt.combine(trade_date, _dt.strptime(str(trade_time or '10:15:00'), '%H:%M:%S').time())
+        trade_dt = _dt.combine(trade_date, _dt.strptime(str(trade_time), '%H:%M:%S').time())
         self.write_position(trade_dt.date(), trade_dt, qty_to_buy, price, code, name, 'BUY', pos_after, None, trade_reason, new_cash)
 
     def run_once(self):

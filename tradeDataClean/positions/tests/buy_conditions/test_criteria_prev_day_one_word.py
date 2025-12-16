@@ -48,7 +48,7 @@ def test_prev_day_one_word_live(capsys):
         assert pairs
         strategy = BuyStrategy(conn)
         for code, name, prev_date in pairs:
-            ok, reason, data = check(strategy, code, name or code, prev_date)
+            ok, reason, data = check(strategy, code, name or code)
             print_unbuffered(capsys, f"[prev_day_one_word] code={code} date={prev_date} ok={ok} reason={reason}")
             assert isinstance(ok, bool)
     finally:

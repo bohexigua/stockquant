@@ -1,6 +1,20 @@
-def check(strategy, code: str, stock_name: str, trade_date: str = None):
+def check(strategy, code: str, stock_name: str):
     try:
         with strategy.db.cursor() as c:
+            from datetime import datetime, time
+            now_t = datetime.now().time()
+            if now_t >= time(9, 0, 0):
+                c.execute("SELECT CURDATE()")
+                drow = c.fetchone()
+                tdate = drow[0]
+            else:
+                c.execute(
+                    "SELECT MAX(trade_date) FROM trade_market_stock_tick WHERE code=%s AND trade_date<CURDATE()",
+                    (code,),
+                )
+                drow = c.fetchone()
+                tdate = drow[0]
+
             c.execute(
                 "SELECT all_themes_name, trade_date FROM trade_factor_most_related_theme WHERE stock_code=%s ORDER BY trade_date DESC LIMIT 1",
                 (code,),
@@ -36,9 +50,9 @@ def check(strategy, code: str, stock_name: str, trade_date: str = None):
                     # 参考 tick 数据源：取竞价末条（<=10:15）价格与昨收
                     c.execute(
                         "SELECT trade_date, trade_time, price, pre_close, name FROM trade_market_stock_tick "
-                        "WHERE code=%s AND trade_date=COALESCE(%s, CURDATE()) AND trade_time<='10:15:00' "
+                        "WHERE code=%s AND trade_date=%s AND trade_time<='10:15:00' "
                         "ORDER BY trade_time DESC LIMIT 1",
-                        (peer, trade_date),
+                        (peer, tdate),
                     )
                     kt = c.fetchone()
                     if not kt:
@@ -72,7 +86,7 @@ def check(strategy, code: str, stock_name: str, trade_date: str = None):
                     'strong2': strong2,
                     'peers1': peers1,
                     'peers2': peers2,
-                    'trade_date': trade_date,
+                    'trade_date': tdate,
                 }
             return True, '', {
                 'strong_count': strong_total,
@@ -82,7 +96,7 @@ def check(strategy, code: str, stock_name: str, trade_date: str = None):
                 'strong2': strong2,
                 'peers1': peers1,
                 'peers2': peers2,
-                'trade_date': trade_date,
+                'trade_date': tdate,
             }
     except Exception:
         return False, '同板块无强势股', {}

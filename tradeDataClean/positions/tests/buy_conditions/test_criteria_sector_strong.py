@@ -51,7 +51,7 @@ def test_sector_strong_live(capsys):
                 continue
             prev = prev_date.strftime('%Y-%m-%d')
             strategy = BuyStrategy(conn)
-            ok, reason, data = check(strategy, code, name or code, prev)
+            ok, reason, data = check(strategy, code, name or code)
             peers1 = data.get('peers1') or []
             peers2 = data.get('peers2') or []
             def _fmt(items):

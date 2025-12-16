@@ -1,6 +1,13 @@
-def check(strategy, code: str, stock_name: str, trade_date: str = None):
+def check(strategy, code: str, stock_name: str):
     try:
         with strategy.db.cursor() as c:
+            c.execute(
+                "SELECT MAX(trade_date) FROM trade_market_stock_daily WHERE code=%s AND trade_date<CURDATE()",
+                (code,),
+            )
+            drow = c.fetchone()
+            trade_date = drow[0]
+
             # 主力拉升计数
             c.execute(
                 "SELECT COUNT(*) FROM trade_factor_stock_intraday_momentum WHERE code=%s AND trade_date=%s AND main_action='主力拉升'",
@@ -79,9 +86,9 @@ def check(strategy, code: str, stock_name: str, trade_date: str = None):
                     return str(t)
                 except Exception:
                     return '-'
-            dd = trade_date or '当日'
+            dd = trade_date or '前一日'
             reason = f"{dd}主力: 拉升{lift_cnt}次/出货{dump_cnt}次, 净拉升{net_lift}; 最后动作:{last_action or '无'}; 最后拉升:{_fmt_time(last_lift_time)} 最后出货:{_fmt_time(last_dump_time)}"
-            if (net_lift >= 0) or (lift_cnt >= 3):
+            if (net_lift >= 1) or (lift_cnt >= 3):
                 return True, reason, data
             return False, reason, data
     except Exception:

@@ -74,9 +74,16 @@ class FactorCalculationScheduler:
             )
             try:
                 with conn.cursor() as c:
-                    c.execute(
-                        "SELECT MAX(cal_date) FROM trade_market_calendar WHERE is_open=1 AND cal_date<=CURDATE()"
-                    )
+                    from datetime import datetime as _dt, time as _time
+                    now_t = _dt.now().time()
+                    if now_t < _time(9, 0, 0):
+                        c.execute(
+                            "SELECT MAX(cal_date) FROM trade_market_calendar WHERE is_open=1 AND cal_date<CURDATE()"
+                        )
+                    else:
+                        c.execute(
+                            "SELECT MAX(cal_date) FROM trade_market_calendar WHERE is_open=1 AND cal_date<=CURDATE()"
+                        )
                     r = c.fetchone()
                     if r and r[0]:
                         return r[0].strftime('%Y-%m-%d')

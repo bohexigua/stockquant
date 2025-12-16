@@ -50,8 +50,7 @@ def test_volume_health_live(capsys):
         for code, name, prev_date in pairs:
             if not prev_date:
                 continue
-            df = strategy.get_daily_recent(code)
-            ok, reason, data = check(strategy, code, name or code, df, prev_date.strftime('%Y-%m-%d'))
+            ok, reason, data = check(strategy, code, name or code)
             print_unbuffered(capsys, f"[volume_health] code={code} date={prev_date} ok={ok} reason={reason}")
             assert isinstance(ok, bool)
     finally:
