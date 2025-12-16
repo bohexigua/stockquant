@@ -97,17 +97,14 @@ class TradingScheduler:
                 c.execute(
                     "INSERT INTO ptm_quant_positions (trade_date, trade_time, trade_qty, trade_price, stock_code, stock_name, trade_side, trade_reason, position_qty_after, realized_pnl) "
                     "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                    (trade_date, trade_time.time() if hasattr(trade_time, 'time') else trade_time, qty, price, code, name, side, trade_reason, pos_after, realized_pnl),
+                    (trade_date, trade_time, qty, price, code, name, side, trade_reason, pos_after, realized_pnl),
                 )
                 # upsert account balance
-                try:
-                    c.execute(
-                        "INSERT INTO ptm_quant_account_balances (account_code, trade_date, trade_time, current_cash) VALUES (%s,%s,%s,%s) "
-                        "ON DUPLICATE KEY UPDATE current_cash=VALUES(current_cash), trade_time=VALUES(trade_time)",
-                        ('DEFAULT', trade_date, trade_time, new_cash),
-                    )
-                except Exception:
-                    pass
+                c.execute(
+                    "INSERT INTO ptm_quant_account_balances (account_code, trade_date, trade_time, current_cash) VALUES (%s,%s,%s,%s) "
+                    "ON DUPLICATE KEY UPDATE current_cash=VALUES(current_cash), trade_time=VALUES(trade_time)",
+                    ('DEFAULT', trade_time.date(), trade_time, new_cash),
+                )
                 try:
                     c.execute(
                         "INSERT INTO ptm_quant_strategy_evaluations (trade_date, stock_code, stock_name, strategy_name, decision_side, will_execute, summary) VALUES (%s,%s,%s,%s,%s,%s,%s)",
@@ -128,7 +125,14 @@ class TradingScheduler:
         trade_date, trade_time, price, qty_to_buy, trade_reason = res
         new_cash = cash_before - qty_to_buy * price
         pos_after = qty_before + qty_to_buy
-        self.write_position(trade_date, trade_time, qty_to_buy, price, code, name, 'BUY', pos_after, None, trade_reason, new_cash)
+        from datetime import datetime as _dt
+        if hasattr(trade_time, 'year') and hasattr(trade_time, 'hour'):
+            trade_dt = trade_time
+        elif hasattr(trade_time, 'hour'):
+            trade_dt = _dt.combine(trade_date, trade_time)
+        else:
+            trade_dt = _dt.combine(trade_date, _dt.strptime(str(trade_time or '10:15:00'), '%H:%M:%S').time())
+        self.write_position(trade_dt.date(), trade_dt, qty_to_buy, price, code, name, 'BUY', pos_after, None, trade_reason, new_cash)
 
     def run_once(self):
         if not self.is_trading_day():
