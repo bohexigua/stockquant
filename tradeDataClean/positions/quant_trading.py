@@ -100,16 +100,10 @@ class TradingScheduler:
                     (trade_date, trade_time, qty, price, code, name, side, trade_reason, pos_after, realized_pnl),
                 )
                 # insert account balance; ignore duplicate on same (account_code, trade_date)
-                try:
-                    c.execute(
-                        "INSERT INTO ptm_quant_account_balances (account_code, trade_date, trade_time, current_cash) VALUES (%s,%s,%s,%s)",
-                        ('DEFAULT', trade_time.date(), trade_time, new_cash),
-                    )
-                except pymysql.err.IntegrityError as e:
-                    if getattr(e, 'args', [None])[0] == 1062:
-                        pass
-                    else:
-                        raise
+                c.execute(
+                    "INSERT INTO ptm_quant_account_balances (account_code, trade_date, trade_time, current_cash) VALUES (%s,%s,%s,%s)",
+                    ('DEFAULT', trade_time.date(), trade_time, new_cash),
+                )
                 try:
                     c.execute(
                         "INSERT INTO ptm_quant_strategy_evaluations (trade_date, stock_code, stock_name, strategy_name, decision_side, will_execute, summary) VALUES (%s,%s,%s,%s,%s,%s,%s)",
