@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 from cozepy import Coze, TokenAuth, Message, ChatStatus, MessageType  # noqa
 from cozepy import COZE_CN_BASE_URL
 
-coze_api_token = "pat_202Dik1x8fvnoazeA2vJGmRLNiFo5YCGIl4gkVMrFgIE5sBMdtL60urLowaC1RCd"
+coze_api_token = "pat_4v10Hckn9VkMjKsbo1T7v8HQKkFfIxqd9gFB2MnloRY0Z8HfkQG2xsHray6IcvM4"
 coze_bot_id = "7575842388766195712"
 coze_user_id = "lxp"
 coze = Coze(auth=TokenAuth(token=coze_api_token), base_url=COZE_CN_BASE_URL)

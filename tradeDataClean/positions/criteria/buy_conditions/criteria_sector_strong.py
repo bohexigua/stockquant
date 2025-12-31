@@ -50,7 +50,7 @@ def check(strategy, code: str, stock_name: str):
                     # 参考 tick 数据源：取竞价末条（<=10:15）价格与昨收
                     c.execute(
                         "SELECT trade_date, trade_time, price, pre_close, name FROM trade_market_stock_tick "
-                        "WHERE code=%s AND trade_date=%s AND trade_time<='10:15:00' "
+                        "WHERE code=%s AND trade_date=%s AND trade_time<='11:00:00' "
                         "ORDER BY trade_time DESC LIMIT 1",
                         (peer, tdate),
                     )

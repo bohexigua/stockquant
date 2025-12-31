@@ -12,6 +12,7 @@ sys.path.append(project_root)
 import pymysql
 from config import config
 from tradeDataClean.positions.buy_strategy import BuyStrategy
+from tradeDataClean.positions.sell_strategy import SellStrategy
 
 logs_dir = os.path.join(project_root, 'logs')
 os.makedirs(logs_dir, exist_ok=True)
@@ -117,6 +118,18 @@ class TradingScheduler:
 
     def decide_and_execute(self, code: str, name: str):
         qty_before, cash_before, init_cash = self.position_before(code)
+
+        # 优先判断卖出
+        # if qty_before > 0:
+        #     s_strat = SellStrategy(self.db)
+        #     s_res = s_strat.decide_sell(code, name)
+        #     if s_res:
+        #         trade_dt, price, qty_to_sell, reason = s_res
+        #         new_cash = cash_before + qty_to_sell * price
+        #         pos_after = qty_before - qty_to_sell
+        #         self.write_position(trade_dt.date(), trade_dt, qty_to_sell, price, code, name, 'SELL', pos_after, None, reason, new_cash)
+        #         return
+
         strat = BuyStrategy(self.db)
         res = strat.decide_buy(code, cash_before, name)
         if res is None:

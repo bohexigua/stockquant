@@ -14,16 +14,14 @@ def check(strategy, code: str, stock_name: str):
                 )
                 drow = c.fetchone()
                 tdate = drow[0]
-            # 当日最新分时的累计量能（tick volume 假设为累计）与对应时间
             c.execute(
-                "SELECT trade_time, volume FROM trade_market_stock_tick WHERE code=%s AND trade_date=%s AND trade_time<='11:00:00' ORDER BY trade_time DESC LIMIT 1",
+                "SELECT trade_time, price, volume FROM trade_market_stock_tick WHERE code=%s AND trade_date=%s AND trade_time<='14:00:00' ORDER BY trade_time DESC LIMIT 1",
                 (code, tdate),
             )
             vrow = c.fetchone()
             if not vrow:
-                return False, '当日分时数据缺失', {'ratio': 0.0}
-            curr_time, pre_vol = vrow[0], float(vrow[1] or 0.0)
-            # 昨日分时量能（5分钟粒度）：选择首个 trade_time >= 当前时间 的bar，取该时点之前的累计量能以对齐口径
+                return False, '14:00前无分时', {'ratio': 0.0}
+            curr_time, price, vol = vrow[0], vrow[1], float(vrow[2] or 0.0)
             c.execute(
                 "SELECT MAX(trade_date) FROM trade_market_stock_5min WHERE code=%s AND trade_date<%s",
                 (code, tdate),
@@ -31,7 +29,7 @@ def check(strategy, code: str, stock_name: str):
             pdrow = c.fetchone()
             prev_date = pdrow[0] if pdrow and pdrow[0] else None
             if not prev_date:
-                return False, '昨日分时数据缺失', {'ratio': 0.0}
+                return False, '昨日分时缺失', {'ratio': 0.0}
             c.execute(
                 "SELECT MIN(trade_time) FROM trade_market_stock_5min WHERE code=%s AND trade_date=%s AND trade_time>=%s",
                 (code, prev_date, curr_time),
@@ -39,7 +37,6 @@ def check(strategy, code: str, stock_name: str):
             ntrow = c.fetchone()
             target_time = ntrow[0]
             if not target_time:
-                # 若不存在比当前时间更晚的昨日bar，则使用昨日最后一个bar作为比较
                 c.execute(
                     "SELECT MAX(trade_time) FROM trade_market_stock_5min WHERE code=%s AND trade_date=%s",
                     (code, prev_date),
@@ -52,11 +49,11 @@ def check(strategy, code: str, stock_name: str):
             )
             y_cum_vol = float(c.fetchone()[0] or 0.0)
             if y_cum_vol <= 0:
-                return False, '昨日分时量能异常', {'ratio': 0.0}
-            ratio_pct = ((pre_vol) / y_cum_vol)
-            reason = f"昨量比{'充分' if ratio_pct >= 1.0 else '不足'}:{ratio_pct:.2f};时点:{curr_time}->{target_time}"
-            if ratio_pct >= 1.0:
-                return True, reason, {'ratio': ratio_pct}
-            return False, reason, {'ratio': ratio_pct}
+                return False, '昨日量能异常', {'ratio': 0.0}
+            ratio = vol / y_cum_vol if y_cum_vol > 0 else 0.0
+            reason = f"昨量比:{ratio:.2f};时点:{curr_time}->{target_time}"
+            if (curr_time and str(curr_time) <= '14:00:00') and (ratio <= 0.30):
+                return True, reason, {'ratio': ratio, 'trade_date': tdate, 'trade_time': curr_time, 'price': float(price) if price is not None else None}
+            return False, reason, {'ratio': ratio, 'trade_date': tdate, 'trade_time': curr_time, 'price': float(price) if price is not None else None}
     except Exception:
-        return False, '昨量比计算异常', {'ratio': 0.0}
+        return False, '卖出条件计算异常', {'ratio': 0.0}
