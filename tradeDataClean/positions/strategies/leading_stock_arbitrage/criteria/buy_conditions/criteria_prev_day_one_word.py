@@ -1,15 +1,22 @@
-def check(strategy, code: str, stock_name: str):
+def check(strategy, code: str, stock_name: str, now_dt=None):
     try:
+        from datetime import datetime
+        if now_dt is None:
+            now_dt = datetime.now()
+        
+        from tradeDataClean.positions.strategies.leading_stock_arbitrage import sql_utils
+        view_daily = sql_utils.get_subquery_stock_daily(now_dt)
+
         with strategy.db.cursor() as c:
             c.execute(
-                "SELECT MAX(trade_date) FROM trade_market_stock_daily WHERE code=%s AND trade_date<CURDATE()",
-                (code,),
+                f"SELECT MAX(trade_date) FROM {view_daily} as t WHERE code=%s AND trade_date<%s",
+                (code, now_dt.date()),
             )
             drow = c.fetchone()
             trade_date = drow[0]
 
             c.execute(
-                "SELECT high, low FROM trade_market_stock_daily WHERE code=%s AND trade_date=%s",
+                f"SELECT high, low FROM {view_daily} as t WHERE code=%s AND trade_date=%s",
                 (code, trade_date),
             )
             r = c.fetchone()

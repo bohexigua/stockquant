@@ -1,16 +1,24 @@
-def check(strategy, code: str, stock_name: str):
+def check(strategy, code: str, stock_name: str, now_dt=None):
     try:
+        from datetime import datetime
+        if now_dt is None:
+            now_dt = datetime.now()
+        
+        from tradeDataClean.positions.strategies.leading_stock_arbitrage import sql_utils
+        view_daily = sql_utils.get_subquery_stock_daily(now_dt)
+        view_momentum = sql_utils.get_subquery_intraday_momentum(now_dt)
+
         with strategy.db.cursor() as c:
             c.execute(
-                "SELECT MAX(trade_date) FROM trade_market_stock_daily WHERE code=%s AND trade_date<CURDATE()",
-                (code,),
+                f"SELECT MAX(trade_date) FROM {view_daily} as t WHERE code=%s AND trade_date<%s",
+                (code, now_dt.date()),
             )
             drow = c.fetchone()
             trade_date = drow[0]
 
             # 主力拉升计数
             c.execute(
-                "SELECT COUNT(*) FROM trade_factor_stock_intraday_momentum WHERE code=%s AND trade_date=%s AND main_action='主力拉升'",
+                f"SELECT COUNT(*) FROM {view_momentum} as t WHERE code=%s AND trade_date=%s AND main_action='主力拉升'",
                 (code, trade_date),
             )
             r1 = c.fetchone()
@@ -18,7 +26,7 @@ def check(strategy, code: str, stock_name: str):
 
             # 主力出货计数
             c.execute(
-                "SELECT COUNT(*) FROM trade_factor_stock_intraday_momentum WHERE code=%s AND trade_date=%s AND main_action='主力出货'",
+                f"SELECT COUNT(*) FROM {view_momentum} as t WHERE code=%s AND trade_date=%s AND main_action='主力出货'",
                 (code, trade_date),
             )
             r2 = c.fetchone()
@@ -26,14 +34,14 @@ def check(strategy, code: str, stock_name: str):
 
             # 比较“主力拉升”与“主力出货”的最后发生时刻，决定最后一次是在做拉升还是出货
             c.execute(
-                "SELECT MAX(trade_time) FROM trade_factor_stock_intraday_momentum WHERE code=%s AND trade_date=%s AND main_action='主力拉升'",
+                f"SELECT MAX(trade_time) FROM {view_momentum} as t WHERE code=%s AND trade_date=%s AND main_action='主力拉升'",
                 (code, trade_date),
             )
             lt_row = c.fetchone()
             last_lift_time = lt_row[0] if lt_row and lt_row[0] is not None else None
 
             c.execute(
-                "SELECT MAX(trade_time) FROM trade_factor_stock_intraday_momentum WHERE code=%s AND trade_date=%s AND main_action='主力出货'",
+                f"SELECT MAX(trade_time) FROM {view_momentum} as t WHERE code=%s AND trade_date=%s AND main_action='主力出货'",
                 (code, trade_date),
             )
             dt_row = c.fetchone()
@@ -91,5 +99,5 @@ def check(strategy, code: str, stock_name: str):
             if (net_lift >= 1) or (lift_cnt >= 3):
                 return True, reason, data
             return False, reason, data
-    except Exception:
+    except Exception as e:
         return False, '主力数据获取异常', {'main_lift': False, 'lift_count': 0, 'main_dump': False, 'dump_count': 0, 'net_lift': 0, 'last_action': None}

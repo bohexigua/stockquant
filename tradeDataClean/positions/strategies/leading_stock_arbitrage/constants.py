@@ -1,0 +1,1 @@
+strategy_name = 'LEADING_STOCK_ARBITRAGE'

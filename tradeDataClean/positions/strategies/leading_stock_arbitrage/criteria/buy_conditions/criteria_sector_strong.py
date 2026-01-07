@@ -1,22 +1,33 @@
-def check(strategy, code: str, stock_name: str):
+def check(strategy, code: str, stock_name: str, now_dt=None):
     try:
+        from datetime import datetime, time
+        if now_dt is None:
+            now_dt = datetime.now()
+        
+        from tradeDataClean.positions.strategies.leading_stock_arbitrage import sql_utils
+        view_tick = sql_utils.get_subquery_stock_tick(now_dt)
+        view_theme = sql_utils.get_subquery_related_theme(now_dt)
+
         with strategy.db.cursor() as c:
-            from datetime import datetime, time
-            now_t = datetime.now().time()
-            if now_t >= time(9, 0, 0):
-                c.execute("SELECT CURDATE()")
-                drow = c.fetchone()
-                tdate = drow[0]
+            now_t = now_dt.time()
+            is_trading_day = False
+            c.execute("SELECT is_open FROM trade_market_calendar WHERE cal_date = %s LIMIT 1", (now_dt.date(),))
+            cal_r = c.fetchone()
+            if cal_r and int(cal_r[0]) == 1:
+                is_trading_day = True
+
+            if now_t >= time(9, 0, 0) and is_trading_day:
+                tdate = now_dt.date()
             else:
                 c.execute(
-                    "SELECT MAX(trade_date) FROM trade_market_stock_tick WHERE code=%s AND trade_date<CURDATE()",
-                    (code,),
+                    f"SELECT MAX(trade_date) FROM {view_tick} as t WHERE code=%s AND trade_date<%s",
+                    (code, now_dt.date()),
                 )
                 drow = c.fetchone()
                 tdate = drow[0]
 
             c.execute(
-                "SELECT all_themes_name, trade_date FROM trade_factor_most_related_theme WHERE stock_code=%s ORDER BY trade_date DESC LIMIT 1",
+                f"SELECT all_themes_name, trade_date FROM {view_theme} as t WHERE stock_code=%s ORDER BY trade_date DESC LIMIT 1",
                 (code,),
             )
             trow = c.fetchone()
@@ -30,9 +41,9 @@ def check(strategy, code: str, stock_name: str):
                     return set()
                 like = f"%{theme}%"
                 c.execute(
-                    "SELECT t.stock_code FROM trade_factor_most_related_theme t "
-                    "WHERE t.all_themes_name LIKE %s "
-                    "AND t.trade_date = (SELECT MAX(tt.trade_date) FROM trade_factor_most_related_theme tt WHERE tt.stock_code=t.stock_code)",
+                    f"SELECT t.stock_code FROM {view_theme} as t "
+                    f"WHERE t.all_themes_name LIKE %s "
+                    f"AND t.trade_date = (SELECT MAX(tt.trade_date) FROM {view_theme} as tt WHERE tt.stock_code=t.stock_code)",
                     (like,),
                 )
                 rows = c.fetchall()
@@ -47,10 +58,10 @@ def check(strategy, code: str, stock_name: str):
                 strong = 0
                 items = []
                 for peer in peers:
-                    # 参考 tick 数据源：取竞价末条（<=10:15）价格与昨收
+                    # 参考 tick 数据源：取竞价末条（<=当前时间）价格与昨收
                     c.execute(
-                        "SELECT trade_date, trade_time, price, pre_close, name FROM trade_market_stock_tick "
-                        "WHERE code=%s AND trade_date=%s AND trade_time<='11:00:00' "
+                        f"SELECT trade_date, trade_time, price, pre_close, name FROM {view_tick} as t "
+                        "WHERE code=%s AND trade_date=%s "
                         "ORDER BY trade_time DESC LIMIT 1",
                         (peer, tdate),
                     )

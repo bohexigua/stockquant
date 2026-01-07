@@ -297,10 +297,18 @@ def fetch_watchlist_codes(w: StockTickWriter, group_name: Optional[str]) -> List
         with w.connection.cursor() as cursor:
             cursor.execute(q, params)
             rows = cursor.fetchall()
-            codes = [r[0] for r in rows if r and r[0]]
-            return codes
+            watchlist_codes = {r[0] for r in rows if r and r[0]}
+            
+            # 获取持仓股
+            cursor.execute("SELECT DISTINCT stock_code FROM ptm_quant_positions WHERE qty > 0")
+            p_rows = cursor.fetchall()
+            position_codes = {r[0] for r in p_rows if r and r[0]}
+            
+            # 合并去重
+            all_codes = list(watchlist_codes.union(position_codes))
+            return all_codes
     except Exception as e:
-        logger.error(f'获取自选股失败: {e}')
+        logger.error(f'获取自选股/持仓股失败: {e}')
         return []
 
 if __name__ == '__main__':

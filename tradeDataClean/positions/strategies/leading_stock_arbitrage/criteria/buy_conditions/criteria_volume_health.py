@@ -1,9 +1,14 @@
-def check(strategy, code: str, stock_name: str):
+def check(strategy, code: str, stock_name: str, now_dt=None):
     try:
+        from datetime import datetime
+        if now_dt is None:
+            now_dt = datetime.now()
+        from tradeDataClean.positions.strategies.leading_stock_arbitrage import sql_utils
+        view_daily = sql_utils.get_subquery_stock_daily(now_dt)
         # 获取最近5条日线数据
         with strategy.db.cursor() as c:
             c.execute(
-                "SELECT open, close, vol FROM trade_market_stock_daily WHERE code=%s ORDER BY trade_date DESC LIMIT 5",
+                f"SELECT open, close, vol FROM {view_daily} as t WHERE code=%s ORDER BY trade_date DESC LIMIT 5",
                 (code,),
             )
             rows = c.fetchall()

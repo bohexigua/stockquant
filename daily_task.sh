@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 股票量化数据处理定时任务脚本
-# 每个工作日19:30执行数据清洗和因子计算
+# 每个工作日21:00执行数据清洗和因子计算
 
 # 设置项目根目录
 PROJECT_ROOT="/Users/zwldqp/work/stockquant"
