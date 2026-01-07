@@ -141,8 +141,8 @@ class TradingScheduler:
                 try:
                     amount = float(qty) * float(price)
                     c.execute(
-                        "INSERT INTO ptm_quant_delivery_orders (deal_date, deal_time, stock_code, stock_name, deal_type, price, qty, amount, related_strategy) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                        (str(trade_date), trade_time.strftime('%H:%M:%S'), code, name, side, price, qty, amount, strategy_name),
+                        "INSERT INTO ptm_quant_delivery_orders (deal_date, deal_time, stock_code, stock_name, deal_type, price, qty, amount, related_strategy, summary) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                        (str(trade_date), trade_time.strftime('%H:%M:%S'), code, name, side, price, qty, amount, strategy_name, trade_reason),
                     )
                 except Exception:
                     pass
