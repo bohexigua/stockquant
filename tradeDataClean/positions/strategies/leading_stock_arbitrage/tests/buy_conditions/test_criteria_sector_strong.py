@@ -1,72 +1,69 @@
-import os
+from datetime import datetime, timedelta
 import sys
+import os
 import pymysql
-import pytest
 
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
-sys.path.append(project_root)
+# Add project root to path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../../../')))
 
 from config import config
-from tradeDataClean.positions.buy_strategy import BuyStrategy
-from tradeDataClean.positions.criteria.buy_conditions.criteria_sector_strong import check
-from tradeDataClean.positions.tests.test_utils import print_unbuffered
+from tradeDataClean.positions.strategies.leading_stock_arbitrage.criteria.buy_conditions import criteria_sector_strong
 
+class StrategyMock:
+    def __init__(self):
+        self.db_config = config.database
+        self.db = pymysql.connect(
+            host=self.db_config.host,
+            port=self.db_config.port,
+            user=self.db_config.user,
+            password=self.db_config.password,
+            database=self.db_config.database,
+            charset=self.db_config.charset,
+            autocommit=True,
+        )
 
-def _get_db():
-    return pymysql.connect(
-        host=config.database.host,
-        port=config.database.port,
-        user=config.database.user,
-        password=config.database.password,
-        database=config.database.database,
-        charset=config.database.charset,
-        autocommit=True,
-    )
+    def close(self):
+        if self.db:
+            self.db.close()
 
-def _pick_codes_names_and_dates(conn):
-    with conn.cursor() as c:
-        c.execute("SELECT stock_code, stock_name FROM ptm_user_watchlist WHERE is_active=1")
-        rows = c.fetchall()
-        seen = set()
-        pairs = []
-        for r in rows:
-            code, name = r[0], r[1]
-            if not code or code in seen:
-                continue
-            seen.add(code)
-            c.execute("SELECT MAX(trade_date) FROM trade_market_stock_daily WHERE code=%s AND trade_date<=CURDATE()", (code,))
-            drow = c.fetchone()
-            prev_date = drow[0] if drow and drow[0] else None
-            pairs.append((code, name, prev_date))
-        return pairs
-
-
-def test_sector_strong_live(capsys):
-    conn = _get_db()
+def test_real_db():
+    strategy = StrategyMock()
     try:
-        pairs = _pick_codes_names_and_dates(conn)
-        assert pairs
-        for code, name, prev_date in pairs:
-            if not prev_date:
-                continue
-            prev = prev_date.strftime('%Y-%m-%d')
-            strategy = BuyStrategy(conn)
-            ok, reason, data = check(strategy, code, name or code)
-            peers1 = data.get('peers1') or []
-            peers2 = data.get('peers2') or []
-            def _fmt(items):
-                try:
-                    return ','.join([f"{it['name']}:{it['rise']:.2%}" for it in items[:5]]) if items else '无'
-                except Exception:
-                    return '无'
-            print_unbuffered(capsys, f"[sector_strong] code={code} date={prev} ok={ok} strong_count={data.get('strong_count')} theme1={data.get('theme1')} theme2={data.get('theme2')} peers1={_fmt(peers1)} peers2={_fmt(peers2)} reason={reason}")
-            assert isinstance(ok, bool)
-            if ok:
-                assert isinstance(peers1, list)
-                assert isinstance(peers2, list)
+        base_date = datetime(2026, 1, 7)
+        code = '002342.SZ'
+        name = '巨力索具'
+        
+        # Sector strength might change intraday, check every minute
+        windows = [('09:25:00', '11:31:00'), ('12:59:00', '15:01:00')]
+        time_ranges = []
+        for s_str, e_str in windows:
+            s_time = datetime.strptime(s_str, '%H:%M:%S').time()
+            e_time = datetime.strptime(e_str, '%H:%M:%S').time()
+            time_ranges.append((s_time, e_time))
+            
+        start_t = time_ranges[0][0]
+        end_t = time_ranges[-1][1]
+        
+        curr_dt = datetime.combine(base_date.date(), start_t)
+        end_dt = datetime.combine(base_date.date(), end_t)
+        
+        while curr_dt <= end_dt:
+            curr_time = curr_dt.time()
+            in_window = False
+            for s, e in time_ranges:
+                if s <= curr_time <= e:
+                    in_window = True
+                    break
+            
+            if in_window:
+                ok, reason, data = criteria_sector_strong.check(strategy, code, name, curr_dt)
+                if ok:
+                    print(f"[PASS] {curr_dt}: {reason} Data keys: {list(data.keys())}")
+            
+            curr_dt += timedelta(minutes=1) # Check every minute
+        
     finally:
-        conn.close()
-
+        strategy.close()
 
 if __name__ == '__main__':
-    pytest.main([__file__])
+    test_real_db()

@@ -142,7 +142,17 @@ class IntradayMomentumCalculator:
         try:
             connection = self._get_db_connection()
             with connection.cursor() as cursor:
+                # 清理当前日期的数据
                 cursor.execute("DELETE FROM trade_factor_stock_intraday_momentum WHERE trade_date=%s", (trade_date,))
+                # 清理30天前的数据
+                try:
+                    target_dt = datetime.strptime(str(trade_date), '%Y-%m-%d')
+                except ValueError:
+                    target_dt = datetime.strptime(str(trade_date), '%Y%m%d')
+                
+                expire_date = (target_dt - timedelta(days=30)).strftime('%Y-%m-%d')
+                cursor.execute("DELETE FROM trade_factor_stock_intraday_momentum WHERE trade_date < %s", (expire_date,))
+                
                 connection.commit()
                 return True
         except Exception as e:

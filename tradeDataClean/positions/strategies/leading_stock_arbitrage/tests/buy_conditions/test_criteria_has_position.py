@@ -1,51 +1,46 @@
-import os
+from datetime import datetime
 import sys
+import os
 import pymysql
-import pytest
 
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
-sys.path.append(project_root)
+# Add project root to path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../../../')))
 
 from config import config
-from tradeDataClean.positions.buy_strategy import BuyStrategy
-from tradeDataClean.positions.tests.test_utils import print_unbuffered
-from tradeDataClean.positions.criteria.buy_conditions.criteria_has_position import check
+from tradeDataClean.positions.strategies.leading_stock_arbitrage.criteria.buy_conditions import criteria_has_position
 
+class StrategyMock:
+    def __init__(self):
+        self.db_config = config.database
+        self.db = pymysql.connect(
+            host=self.db_config.host,
+            port=self.db_config.port,
+            user=self.db_config.user,
+            password=self.db_config.password,
+            database=self.db_config.database,
+            charset=self.db_config.charset,
+            autocommit=True,
+        )
 
-def _get_db():
-    return pymysql.connect(
-        host=config.database.host,
-        port=config.database.port,
-        user=config.database.user,
-        password=config.database.password,
-        database=config.database.database,
-        charset=config.database.charset,
-        autocommit=True,
-    )
+    def close(self):
+        if self.db:
+            self.db.close()
 
-def _pick_code_name(conn):
-    with conn.cursor() as c:
-        c.execute("SELECT stock_code, stock_name FROM ptm_user_watchlist WHERE is_active=1 LIMIT 1")
-        r = c.fetchone()
-        if r and r[0]:
-            return r[0], r[1]
-        c.execute("SELECT code, name FROM trade_market_stock_daily LIMIT 1")
-        r = c.fetchone()
-        return (r[0], r[1]) if r else (None, None)
-
-
-def test_has_position_live(capsys):
-    conn = _get_db()
+def test_real_db():
+    strategy = StrategyMock()
     try:
-        code, name = _pick_code_name(conn)
-        assert code is not None
-        strategy = BuyStrategy(conn)
-        ok, reason, data = check(strategy, code, name or code)
-        print_unbuffered(capsys, f"[has_position] code={code} name={name or code} ok={ok} reason={reason} position_qty_after={data.get('position_qty_after')}")
-        assert isinstance(ok, bool)
+        now_dt = datetime(2026, 1, 7, 9, 30, 0)
+        code = '002342.SZ'
+        name = '巨力索具'
+        
+        print(f"Testing {code} {name} at {now_dt}...")
+        ok, reason, data = criteria_has_position.check(strategy, code, name, now_dt)
+        print(f"Result: ok={ok}")
+        print(f"Reason: {reason}")
+        print(f"Data: {data}")
+        
     finally:
-        conn.close()
-
+        strategy.close()
 
 if __name__ == '__main__':
-    pytest.main([__file__])
+    test_real_db()

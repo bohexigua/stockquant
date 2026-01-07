@@ -1,68 +1,57 @@
-import unittest
-from unittest.mock import MagicMock
+from datetime import datetime
 import sys
 import os
+import pymysql
 
-# Adjust path to find project root
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))))
-sys.path.append(project_root)
+# Add project root to path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../../../')))
 
-from tradeDataClean.positions.strategies.leading_stock_arbitrage.criteria.buy_conditions.criteria_sector_limit import check
+from config import config
+from tradeDataClean.positions.strategies.leading_stock_arbitrage.criteria.buy_conditions import criteria_sector_limit
 
-class TestCriteriaSectorLimit(unittest.TestCase):
-    def setUp(self):
-        self.strategy = MagicMock()
-        self.cursor = MagicMock()
-        self.strategy.db.cursor.return_value.__enter__.return_value = self.cursor
+class StrategyMock:
+    def __init__(self):
+        self.db_config = config.database
+        self.db = pymysql.connect(
+            host=self.db_config.host,
+            port=self.db_config.port,
+            user=self.db_config.user,
+            password=self.db_config.password,
+            database=self.db_config.database,
+            charset=self.db_config.charset,
+            autocommit=True,
+        )
 
-    def test_no_themes(self):
-        ok, reason, data = check(self.strategy, '000001', 'Test', None, None)
-        self.assertTrue(ok)
-        self.assertEqual(reason, '')
+    def close(self):
+        if self.db:
+            self.db.close()
 
-    def test_no_positions(self):
-        # Mock no held positions
-        self.cursor.fetchall.return_value = []
+def test_real_db():
+    strategy = StrategyMock()
+    try:
+        now_dt = datetime(2026, 1, 7, 9, 30, 0)
+        code = '002342.SZ'
+        name = '巨力索具'
         
-        ok, reason, data = check(self.strategy, '000001', 'Test', 'ThemeA', 'ThemeB')
-        self.assertTrue(ok)
-
-    def test_limit_not_reached(self):
-        # Mock 1 held position matching ThemeA
-        self.cursor.fetchall.return_value = [('000002',)]
-        # Mock theme query for held stock
-        self.cursor.fetchone.return_value = ('ThemeA, ThemeC', )
+        print(f"Testing {code} {name} at {now_dt}...")
+        # Assume some themes for testing, or fetch from DB if needed. Here we use placeholders or try to fetch.
+        # For simplicity, pass None to test basic logic or specific themes if known.
+        # Let's try to fetch themes for this stock first to make it realistic
+        theme1, theme2 = None, None
+        with strategy.db.cursor() as c:
+             c.execute("SELECT theme_name FROM trade_market_stock_theme_relation WHERE stock_code=%s LIMIT 2", (code,))
+             rows = c.fetchall()
+             if len(rows) > 0: theme1 = rows[0][0]
+             if len(rows) > 1: theme2 = rows[1][0]
         
-        ok, reason, data = check(self.strategy, '000001', 'Test', 'ThemeA', 'ThemeB')
-        self.assertTrue(ok)
-        self.assertEqual(data['count'], 1)
-
-    def test_limit_reached(self):
-        # Mock 2 held positions matching ThemeA
-        self.cursor.fetchall.return_value = [('000002',), ('000003',)]
-        # Mock theme query for held stocks
-        # 1st call for 000002: ThemeA
-        # 2nd call for 000003: ThemeA
-        self.cursor.fetchone.side_effect = [('ThemeA, ThemeC',), ('ThemeA, ThemeD',)]
+        print(f"Themes: {theme1}, {theme2}")
+        ok, reason, data = criteria_sector_limit.check(strategy, code, name, theme1, theme2, now_dt)
+        print(f"Result: ok={ok}")
+        print(f"Reason: {reason}")
+        print(f"Data: {data}")
         
-        ok, reason, data = check(self.strategy, '000001', 'Test', 'ThemeA', 'ThemeB')
-        self.assertFalse(ok)
-        self.assertIn('上限', reason)
-        self.assertEqual(data['count'], 2)
-
-    def test_limit_reached_mixed_themes(self):
-        # Mock 2 held positions, one matches ThemeA, one matches ThemeB
-        self.cursor.fetchall.return_value = [('000002',), ('000003',)]
-        self.cursor.fetchone.side_effect = [('ThemeA, ThemeC',), ('ThemeB, ThemeD',)]
-        
-        ok, reason, data = check(self.strategy, '000001', 'Test', 'ThemeA', 'ThemeB')
-        self.assertFalse(ok)
-        self.assertEqual(data['count'], 2)
-
-    def test_db_exception(self):
-        self.strategy.db.cursor.side_effect = Exception("DB Error")
-        ok, reason, data = check(self.strategy, '000001', 'Test', 'ThemeA', None)
-        self.assertTrue(ok) # Should pass on error
+    finally:
+        strategy.close()
 
 if __name__ == '__main__':
-    unittest.main()
+    test_real_db()

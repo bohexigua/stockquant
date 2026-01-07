@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 import sys
 import os
 import pymysql
@@ -7,7 +7,7 @@ import pymysql
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../../../')))
 
 from config import config
-from tradeDataClean.positions.strategies.leading_stock_arbitrage.criteria.sell_conditions import criteria_not_in_watchlist
+from tradeDataClean.positions.strategies.leading_stock_arbitrage.criteria.buy_conditions import criteria_preclose_and_rise
 
 class StrategyMock:
     def __init__(self):
@@ -33,13 +33,19 @@ def test_real_db():
         code = '002342.SZ'
         name = '巨力索具'
         
-        windows = [('09:14:00', '11:31:00'), ('12:59:00', '15:01:00')]
+        windows = [('09:14:00', '11:31:00')]
+        
+        from datetime import timedelta
+        
+        # Parse windows to time objects
         time_ranges = []
         for s_str, e_str in windows:
             s_time = datetime.strptime(s_str, '%H:%M:%S').time()
             e_time = datetime.strptime(e_str, '%H:%M:%S').time()
             time_ranges.append((s_time, e_time))
             
+        # Iterate every minute in the windows
+        # Simplified: just iterate from min start to max end with 1 min step, and check if in window
         start_t = time_ranges[0][0]
         end_t = time_ranges[-1][1]
         
@@ -55,9 +61,11 @@ def test_real_db():
                     break
             
             if in_window:
-                ok, reason, data = criteria_not_in_watchlist.check(strategy, code, name, curr_dt)
+                ok, reason, data = criteria_preclose_and_rise.check(strategy, code, name, curr_dt)
                 if ok:
                     print(f"[PASS] {curr_dt}: {reason} Data: {data}")
+                else:
+                    print(f"[FAIL] {curr_dt}: {reason}")
             
             curr_dt += timedelta(seconds=20)
         

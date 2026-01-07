@@ -27,7 +27,7 @@ def check(strategy, code: str, stock_name: str, now_dt=None):
                 drow = c.fetchone()
                 tdate = drow[0]
             c.execute(
-                f"SELECT trade_time, price, pre_close, volume FROM {view_tick} as t WHERE code=%s AND trade_date=%s AND trade_time<='09:30:00' ORDER BY trade_time DESC LIMIT 1",
+                f"SELECT trade_time, price, pre_close, volume FROM {view_tick} as t WHERE code=%s AND trade_date=%s AND trade_time<='09:31:00' ORDER BY trade_time DESC LIMIT 1",
                 (code, tdate),
             )
             trow = c.fetchone()
