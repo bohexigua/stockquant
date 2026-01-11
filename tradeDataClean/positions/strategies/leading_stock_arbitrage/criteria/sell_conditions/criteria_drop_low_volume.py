@@ -11,6 +11,9 @@ def check(strategy, code: str, stock_name: str, now_dt=None):
         
         price = data['price']
         pre_close = data['pre_close']
+
+        if price <= 0.0 or pre_close <= 0.0:
+            return False, '价格数据无效(<=0)', data
         
         # 当日开始下跌 (Price < PreClose)
         if price < pre_close and ratio < 0.5:

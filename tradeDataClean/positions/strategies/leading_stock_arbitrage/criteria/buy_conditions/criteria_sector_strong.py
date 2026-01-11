@@ -88,7 +88,8 @@ def check(strategy, code: str, stock_name: str, now_dt=None):
             strong1, peers1 = _count(peers_t1)
             strong2, peers2 = _count(peers_t2)
             strong_total = strong1 + strong2
-            if strong_total <= 0:
+            # 判定条件修改：第一个板块至少1个强势股，或者第二个板块至少2个强势股
+            if not (strong1 >= 1 or strong2 >= 2):
                 return False, '同板块无强势股', {
                     'strong_count': strong_total,
                     'theme1': theme1,

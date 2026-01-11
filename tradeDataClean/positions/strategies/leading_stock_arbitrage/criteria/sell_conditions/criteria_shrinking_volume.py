@@ -33,10 +33,8 @@ def check(strategy, code: str, stock_name: str, now_dt=None):
             
             close_2 = float(rows[1][2] or 0) # Price at T-2 (Close)
             
-            # 连续2个交易日缩量: V(T-1) < V(T-2) AND V(T-2) < V(T-3)
-            # 或者 T-1 < T-2 即可？ "连续2个交易日缩量" 通常指 T-1和T-2都比前一天缩量
-            # 即 V(T-1) < V(T-2) AND V(T-2) < V(T-3)
-            is_shrinking = (vol_1 < vol_2) and (vol_2 < vol_3)
+            # 连续2个交易日缩量: V(T-1) < V(T-2)*0.88 AND V(T-2) < V(T-3)*0.88
+            is_shrinking = (vol_1 < vol_2 * 0.88) and (vol_2 < vol_3 * 0.88)
             
             if not is_shrinking:
                 return False, '未满足连续2日缩量', {}
@@ -49,6 +47,9 @@ def check(strategy, code: str, stock_name: str, now_dt=None):
             price = data['price']
             pre_close = data['pre_close']
             open_price = data['open']
+
+            if price <= 0.0 or pre_close <= 0.0 or open_price <= 0.0:
+                return False, '价格数据无效(<=0)', data
             
             # 当日价格对比2个交易日前涨幅 < 7%
             # (Price - Close_2) / Close_2

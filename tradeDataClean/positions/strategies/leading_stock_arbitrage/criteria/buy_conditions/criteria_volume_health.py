@@ -44,7 +44,7 @@ def check(strategy, code: str, stock_name: str, now_dt=None):
         for i in range(1, len(df)):
             if vols.iloc[i] > vols.iloc[i-1]:
                 vol_inc += 1
-            elif vols.iloc[i] < vols.iloc[i-1]:
+            elif vols.iloc[i] < vols.iloc[i-1] * 0.88:
                 vol_dec += 1
 
         # 判定规则：5日窗口中放大≥3天，且缩量≤2天

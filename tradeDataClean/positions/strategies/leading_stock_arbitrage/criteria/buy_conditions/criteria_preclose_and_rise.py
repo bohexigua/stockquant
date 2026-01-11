@@ -34,6 +34,23 @@ def check(strategy, code: str, stock_name: str, now_dt=None):
             if not trow:
                 return False, '竞价无数据', {}
             trade_time, price, pre_close, pre_vol = trow[0], trow[1], trow[2], trow[3]
+
+            # 直接获取最新现价
+            current_price = price
+            current_time = trade_time
+            
+            qs = f"SELECT price, trade_time FROM {view_tick} WHERE code=%s AND trade_date=%s"
+            qa = [code, tdate]
+            if tdate == now_dt.date():
+                qs += " AND trade_time <= %s"
+                qa.append(now_t)
+            qs += " ORDER BY trade_time DESC LIMIT 1"
+            c.execute(qs, tuple(qa))
+            crow = c.fetchone()
+            if crow and crow[0] is not None and float(crow[0]) > 0:
+                current_price = crow[0]
+                current_time = crow[1]
+
             c.execute(
                 f"SELECT vol FROM {view_daily} as t WHERE code=%s AND trade_date=(SELECT MAX(trade_date) FROM {view_daily} as tt WHERE code=%s AND trade_date<%s)",
                 (code, code, tdate),
@@ -46,11 +63,11 @@ def check(strategy, code: str, stock_name: str, now_dt=None):
                 pre_ratio = 0.0 if y_vol <= 0 else (float(pre_vol) / 100.0) / y_vol
     except Exception as e:
         return False, '竞价数据获取异常', {}
-    if pre_close is None or price is None:
-        return False, '竞价价格缺失', {}
-    rise = (float(price) - float(pre_close)) / float(pre_close)
+    if pre_close is None or current_price is None or float(current_price) <= 0:
+        return False, '价格缺失', {}
+    rise = (float(current_price) - float(pre_close)) / float(pre_close)
     if pre_ratio < 0.01:
         return False, f'竞价量能不足，竞价量能占比:{pre_ratio:.2}', {'pre_ratio': pre_ratio}
     if rise > 0.05:
-        return False, f'竞价涨幅过大:{rise:.2%}，竞价量能占比:{pre_ratio:.2}', {'rise': rise, 'pre_ratio': pre_ratio}
-    return True, '', {'rise': rise, 'pre_close': float(pre_close), 'trade_date': tdate, 'trade_time': trade_time, 'price': float(price), 'pre_ratio': pre_ratio}
+        return False, f'现价涨幅过大:{rise:.2%}，竞价量能占比:{pre_ratio:.2}', {'rise': rise, 'pre_ratio': pre_ratio}
+    return True, '', {'rise': rise, 'pre_close': float(pre_close), 'trade_date': tdate, 'trade_time': current_time, 'price': float(current_price), 'pre_ratio': pre_ratio}

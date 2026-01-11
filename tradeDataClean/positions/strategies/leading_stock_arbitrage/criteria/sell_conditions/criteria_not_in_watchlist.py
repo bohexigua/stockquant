@@ -22,6 +22,9 @@ def check(strategy, code: str, stock_name: str, now_dt=None):
         price = data['price']
         pre_close = data['pre_close']
         open_price = data['open']
+
+        if price <= 0.0 or pre_close <= 0.0 or open_price <= 0.0:
+            return False, '价格数据无效(<=0)', data
         
         # 3. 判断条件
         # 当日开盘是涨的 (Open > PreClose) 且非涨停
