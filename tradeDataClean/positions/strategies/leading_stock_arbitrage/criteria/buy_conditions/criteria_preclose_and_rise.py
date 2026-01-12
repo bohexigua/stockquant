@@ -69,6 +69,6 @@ def check(strategy, code: str, stock_name: str, now_dt=None):
     rise = (float(current_price) - float(pre_close)) / float(pre_close)
     if pre_ratio < 0.01:
         return False, f'竞价量能不足，竞价量能占比:{pre_ratio:.2}', {'pre_ratio': pre_ratio}
-    if rise > 0.07:
+    if rise > 0.05:
         return False, f'现价涨幅过大:{rise:.2%}，竞价量能占比:{pre_ratio:.2}', {'rise': rise, 'pre_ratio': pre_ratio}
     return True, '', {'rise': rise, 'pre_close': float(pre_close), 'trade_date': tdate, 'trade_time': current_time, 'price': float(current_price), 'pre_ratio': pre_ratio}

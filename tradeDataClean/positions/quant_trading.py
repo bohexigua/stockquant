@@ -127,10 +127,10 @@ class TradingScheduler:
             
             with self.db.cursor() as c:
                 c.execute(
-                    "INSERT INTO ptm_quant_positions (qty, price, stock_code, stock_name, related_strategy) "
-                    "VALUES (%s,%s,%s,%s,%s) "
-                    "ON DUPLICATE KEY UPDATE qty=VALUES(qty), price=VALUES(price), related_strategy=VALUES(related_strategy), updated_time=CURRENT_TIMESTAMP",
-                    (pos_after, final_price, code, name, strategy_name),
+                    "INSERT INTO ptm_quant_positions (qty, price, stock_code, stock_name, related_strategy, created_time, updated_time) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s) "
+                    "ON DUPLICATE KEY UPDATE qty=VALUES(qty), price=VALUES(price), related_strategy=VALUES(related_strategy), updated_time=VALUES(updated_time)",
+                    (pos_after, final_price, code, name, strategy_name, trade_time, trade_time),
                 )
                 # insert account balance log
                 account_code = self._get_account_code(strategy_name)
