@@ -39,7 +39,7 @@ def check(strategy, code: str, stock_name: str, now_dt=None):
             current_price = price
             current_time = trade_time
             
-            qs = f"SELECT price, trade_time FROM {view_tick} WHERE code=%s AND trade_date=%s"
+            qs = f"SELECT price, trade_time FROM {view_tick} as t WHERE code=%s AND trade_date=%s"
             qa = [code, tdate]
             if tdate == now_dt.date():
                 qs += " AND trade_time <= %s"
