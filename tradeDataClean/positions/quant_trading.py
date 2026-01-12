@@ -41,8 +41,6 @@ class TradingScheduler:
 
     def is_trading_day(self, target_date: Optional[datetime.date] = None) -> bool:
         try:
-            if self.test_mode:
-                return True
             with self.db.cursor() as c:
                 if target_date:
                     c.execute("SELECT is_open FROM trade_market_calendar WHERE cal_date = %s LIMIT 1", (target_date,))
@@ -229,6 +227,7 @@ def main():
             while curr_date <= end_date:
                 # 跳过非交易日
                 if not s.is_trading_day(datetime.combine(curr_date, datetime.min.time())):
+                    print(f"{curr_date} 非交易日")
                     logger.info(f"{curr_date} 非交易日，跳过")
                     curr_date += timedelta(days=1)
                     continue
