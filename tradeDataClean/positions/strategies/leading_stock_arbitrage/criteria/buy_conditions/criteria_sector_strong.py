@@ -77,7 +77,7 @@ def check(strategy, code: str, stock_name: str, now_dt=None):
                     except Exception:
                         pre_close = None
                     nm = str(kt[4]) if len(kt) > 4 and kt[4] else peer
-                    if price is None or pre_close is None or pre_close <= 0:
+                    if price is None or price <= 0 or pre_close is None or pre_close <= 0:
                         continue
                     rise = (price - pre_close) / pre_close
                     items.append({'name': nm, 'rise': rise})

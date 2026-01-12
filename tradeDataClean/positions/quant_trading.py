@@ -135,8 +135,8 @@ class TradingScheduler:
                 # insert account balance log
                 account_code = self._get_account_code(strategy_name)
                 c.execute(
-                    "INSERT INTO ptm_quant_account_balances (account_code, current_cash, change_reason) VALUES (%s,%s,%s)",
-                    (account_code, new_cash, trade_reason),
+                    "INSERT INTO ptm_quant_account_balances (account_code, current_cash, change_reason, created_time, updated_time) VALUES (%s,%s,%s,%s,%s)",
+                    (account_code, new_cash, trade_reason, trade_time, trade_time), 
                 )
                 try:
                     amount = float(qty) * float(price)
@@ -204,7 +204,7 @@ def _time_in_windows(now: datetime, windows: List[Tuple[str, str]]) -> bool:
     return False
 
 
-FIXED_WINDOWS = [('09:24:00', '11:31:00'), ('12:59:00', '15:01:00')]
+FIXED_WINDOWS = [('09:26:00', '11:31:00'), ('12:59:00', '15:01:00')]
 FIXED_INTERVAL = 20
 
 
