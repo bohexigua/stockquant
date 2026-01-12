@@ -92,14 +92,14 @@ class TradingScheduler:
                 # latest account cash
                 account_code = self._get_account_code(strategy_name)
                 c.execute(
-                    "SELECT current_cash FROM ptm_quant_account_balances WHERE account_code=%s ORDER BY created_time DESC LIMIT 1",
+                    "SELECT current_cash FROM ptm_quant_account_balances WHERE account_code=%s ORDER BY id DESC LIMIT 1",
                     (account_code,)
                 )
                 br = c.fetchone()
                 cash = float(br[0]) if br and br[0] is not None else 100000.0
                 # initial account cash (earliest recorded)
                 c.execute(
-                    "SELECT current_cash FROM ptm_quant_account_balances WHERE account_code=%s ORDER BY created_time ASC LIMIT 1",
+                    "SELECT current_cash FROM ptm_quant_account_balances WHERE account_code=%s ORDER BY id ASC LIMIT 1",
                     (account_code,)
                 )
                 ir = c.fetchone()
@@ -204,7 +204,7 @@ def _time_in_windows(now: datetime, windows: List[Tuple[str, str]]) -> bool:
     return False
 
 
-FIXED_WINDOWS = [('09:26:00', '11:31:00'), ('12:59:00', '15:01:00')]
+FIXED_WINDOWS = [('09:29:40', '11:31:00'), ('12:59:00', '15:01:00')]
 FIXED_INTERVAL = 20
 
 
@@ -227,6 +227,12 @@ def main():
             
             curr_date = start_date
             while curr_date <= end_date:
+                # 跳过非交易日
+                if not s.is_trading_day(datetime.combine(curr_date, datetime.min.time())):
+                    logger.info(f"{curr_date} 非交易日，跳过")
+                    curr_date += timedelta(days=1)
+                    continue
+
                 # 遍历当天的所有交易时间点
                 for start_time_str, end_time_str in FIXED_WINDOWS:
                     start_dt = datetime.combine(curr_date, datetime.strptime(start_time_str, '%H:%M:%S').time())
