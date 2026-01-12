@@ -204,7 +204,7 @@ def _time_in_windows(now: datetime, windows: List[Tuple[str, str]]) -> bool:
     return False
 
 
-FIXED_WINDOWS = [('09:14:00', '11:31:00'), ('12:59:00', '15:01:00')]
+FIXED_WINDOWS = [('09:24:00', '11:31:00'), ('12:59:00', '15:01:00')]
 FIXED_INTERVAL = 20
 
 

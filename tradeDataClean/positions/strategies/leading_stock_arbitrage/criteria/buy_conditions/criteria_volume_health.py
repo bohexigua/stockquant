@@ -48,7 +48,7 @@ def check(strategy, code: str, stock_name: str, now_dt=None):
                 vol_dec += 1
 
         # 判定规则：5日窗口中放大≥3天，且缩量≤2天
-        cond_ok = (vol_inc >= 3 and vol_dec <= 2)
+        cond_ok = (vol_dec <= 2)
             
         if not cond_ok:
             base_summary = f"量能:放大{vol_inc}天,缩量{vol_dec}天"
@@ -91,6 +91,7 @@ def check(strategy, code: str, stock_name: str, now_dt=None):
             'support_ok': support_ok,
             'vol_summary': vol_summary,
         }
-    except Exception:
+    except Exception as e:
         vol_summary = '量能:计算异常'
+        print(f'{stock_name} {code} {vol_summary}: {e}')
         return False, vol_summary, {'vol_summary': vol_summary}

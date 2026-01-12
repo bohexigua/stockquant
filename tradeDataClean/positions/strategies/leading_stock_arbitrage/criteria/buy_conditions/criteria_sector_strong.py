@@ -110,5 +110,6 @@ def check(strategy, code: str, stock_name: str, now_dt=None):
                 'peers2': peers2,
                 'trade_date': tdate,
             }
-    except Exception:
+    except Exception as e:
+        print(f'获取板块数据异常: {e}')
         return False, '同板块无强势股', {}

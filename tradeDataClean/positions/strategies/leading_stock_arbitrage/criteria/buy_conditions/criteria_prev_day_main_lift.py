@@ -96,8 +96,9 @@ def check(strategy, code: str, stock_name: str, now_dt=None):
                     return '-'
             dd = trade_date or '前一日'
             reason = f"{dd}主力: 拉升{lift_cnt}次/出货{dump_cnt}次, 净拉升{net_lift}; 最后动作:{last_action or '无'}; 最后拉升:{_fmt_time(last_lift_time)} 最后出货:{_fmt_time(last_dump_time)}"
-            if (net_lift >= 1) or (lift_cnt >= 3):
+            if (net_lift >= 1) or (lift_cnt >= 2):
                 return True, reason, data
             return False, reason, data
     except Exception as e:
+        print(f'获取主力数据异常: {e}')
         return False, '主力数据获取异常', {'main_lift': False, 'lift_count': 0, 'main_dump': False, 'dump_count': 0, 'net_lift': 0, 'last_action': None}

@@ -62,12 +62,13 @@ def check(strategy, code: str, stock_name: str, now_dt=None):
                 y_vol = float(yrow[0])
                 pre_ratio = 0.0 if y_vol <= 0 else (float(pre_vol) / 100.0) / y_vol
     except Exception as e:
+        print(f'获取竞价数据异常: {e}')
         return False, '竞价数据获取异常', {}
     if pre_close is None or current_price is None or float(current_price) <= 0:
         return False, '价格缺失', {}
     rise = (float(current_price) - float(pre_close)) / float(pre_close)
     if pre_ratio < 0.01:
         return False, f'竞价量能不足，竞价量能占比:{pre_ratio:.2}', {'pre_ratio': pre_ratio}
-    if rise > 0.05:
+    if rise > 0.07:
         return False, f'现价涨幅过大:{rise:.2%}，竞价量能占比:{pre_ratio:.2}', {'rise': rise, 'pre_ratio': pre_ratio}
     return True, '', {'rise': rise, 'pre_close': float(pre_close), 'trade_date': tdate, 'trade_time': current_time, 'price': float(current_price), 'pre_ratio': pre_ratio}
