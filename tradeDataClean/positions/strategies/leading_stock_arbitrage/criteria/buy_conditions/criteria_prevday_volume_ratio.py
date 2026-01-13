@@ -66,7 +66,7 @@ def check(strategy, code: str, stock_name: str, now_dt=None):
                 return False, '昨日分时量能异常', {'ratio': 0.0}
             ratio_pct = ((pre_vol) / y_cum_vol)
             reason = f"昨量比{'充分' if ratio_pct >= 1.0 else '不足'}:{ratio_pct:.2f};时点:{curr_time}->{target_time}"
-            if ratio_pct >= 1.0:
+            if ratio_pct >= 1.2:
                 return True, reason, {'ratio': ratio_pct}
             return False, reason, {'ratio': ratio_pct}
     except Exception:

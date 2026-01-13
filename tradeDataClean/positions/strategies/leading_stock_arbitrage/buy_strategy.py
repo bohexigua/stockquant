@@ -94,6 +94,6 @@ class BuyStrategy:
         if qty_to_buy <= 0:
             self.write_strategy_evaluation(code, stock_name, 'BUY', 0, '仓位不足', now_dt=now_dt)
             return None
-        reason = f"梯队({sec['theme1']})强势:{sec['strong1']}只[{list1}];梯队({sec['theme2']})强势:{sec['strong2']}只[{list2}];{vol_data.get('vol_summary', '')};{main_lift_reason};昨量比:{vr['ratio']:.2f}≥1.0;竞价量能:{rv['pre_ratio']:.2}≥昨量0.01;现价涨幅:{rv['rise']:.2%}≤5%;建议仓位:{layers}层"
+        reason = f"梯队({sec['theme1']})强势:{sec['strong1']}只[{list1}];梯队({sec['theme2']})强势:{sec['strong2']}只[{list2}];{vol_data.get('vol_summary', '')};{main_lift_reason};昨量比:{vr['ratio']:.2f}≥1.2;竞价量能:{rv['pre_ratio']:.2}≥昨量0.01;现价涨幅:{rv['rise']:.2%}≤5%;建议仓位:{layers}层"
         self.write_strategy_evaluation(code, stock_name, 'BUY', 1, reason, qty_to_buy, now_dt=now_dt)
         return now_dt, rv['price'], qty_to_buy, reason

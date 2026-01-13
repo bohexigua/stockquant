@@ -38,17 +38,21 @@ def check(strategy, code: str, stock_name: str, now_dt=None):
             vol_summary = '量能:数据异常'
             return False, vol_summary, {'vol_summary': vol_summary}
             
-        # 连续5个交易日观察量能放大/缩量情况（相邻比较）
+        # 连续5个交易日观察量能放大/缩量情况
+        # 判定规则调整：当前交易日如比之前交易日有放量则认为是放量
+        # 例如[3, 2, 4, 3, 5]则认为有2次放量，分别是4比3放量，5比4放量
         vol_inc = 0
         vol_dec = 0
+        ref_vol = vols.iloc[0]
         for i in range(1, len(df)):
-            if vols.iloc[i] > vols.iloc[i-1]:
+            if vols.iloc[i] > ref_vol:
                 vol_inc += 1
+                ref_vol = vols.iloc[i]
             elif vols.iloc[i] < vols.iloc[i-1] * 0.88:
                 vol_dec += 1
 
         # 判定规则：5日窗口中放大≥3天，且缩量≤2天
-        cond_ok = (vol_dec <= 2) and (vol_inc >= 3)
+        cond_ok = (vol_dec <= 2) and (vol_inc >= 2)
             
         if not cond_ok:
             base_summary = f"量能:放大{vol_inc}天,缩量{vol_dec}天"
