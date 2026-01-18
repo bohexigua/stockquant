@@ -12,6 +12,7 @@ sys.path.append(project_root)
 import pymysql
 from config import config
 from tradeDataClean.positions.strategies import strategies
+from tradeDataClean.positions.strategy_config import STRATEGY_CONFIG
 
 logs_dir = os.path.join(project_root, 'logs')
 os.makedirs(logs_dir, exist_ok=True)
@@ -25,6 +26,7 @@ class TradingScheduler:
         self.db = None
         self.db_config = config.database
         self.test_mode = test_mode
+        self.strategy_last_run = {}
         self._init_db()
 
     def _init_db(self):
@@ -151,15 +153,22 @@ class TradingScheduler:
     def _combine_date_time(self, trade_date, trade_time) -> datetime:
         return datetime.combine(trade_date, datetime.strptime(str(trade_time), '%H:%M:%S').time())
 
-    def execute_leading_stock_arbitrage(self, code: str, name: str, now_dt: Optional[datetime] = None):
+    def execute_strategy(self, strategy_key: str, code: str, name: str, now_dt: Optional[datetime] = None):
         if now_dt is None:
             now_dt = datetime.now()
-        strategy_name = strategies.leading_stock_arbitrage.name
+
+        if not hasattr(strategies, strategy_key):
+             logger.warning(f"策略 {strategy_key} 未在 strategies 中定义")
+             return
+
+        strategy_def = getattr(strategies, strategy_key)
+        strategy_name = strategy_def.name
+        
         qty_before, cash_before, init_cash = self.position_before(code, strategy_name)
 
         # 优先判断卖出
         if qty_before > 0:
-            s_strat = strategies.leading_stock_arbitrage.sell(self.db)
+            s_strat = strategy_def.sell(self.db)
             s_res = s_strat.decide_sell(code, name, now_dt)
             if s_res:
                 trade_dt, price, qty_to_sell, reason = s_res
@@ -168,7 +177,7 @@ class TradingScheduler:
                 self.write_position(trade_dt.date(), trade_dt, qty_to_sell, price, code, name, 'SELL', pos_after, reason, new_cash, strategy_name)
                 return
 
-        strat = strategies.leading_stock_arbitrage.buy(self.db)
+        strat = strategy_def.buy(self.db)
         res = strat.decide_buy(code, cash_before, name, now_dt)
         if res is None:
             return
@@ -178,7 +187,7 @@ class TradingScheduler:
 
         self.write_position(trade_dt.date(), trade_dt, qty_to_buy, price, code, name, 'BUY', pos_after, trade_reason, new_cash, strategy_name)
 
-    def run_once(self, now_dt: Optional[datetime] = None):
+    def run_strategies(self, now_dt: Optional[datetime] = None):
         if now_dt is None:
             now_dt = datetime.now()
         if not self.is_trading_day(now_dt.date()):
@@ -188,8 +197,27 @@ class TradingScheduler:
         if not watchlist:
             logger.info('自选股为空')
             return
-        for code, name in watchlist:
-            self.execute_leading_stock_arbitrage(code, name, now_dt)
+        
+        for strategy_conf in STRATEGY_CONFIG:
+            if not strategy_conf.get('enabled', False):
+                continue
+            strategy_key = strategy_conf['key']
+            
+            # Check execution window
+            windows = strategy_conf.get('execution_windows', [])
+            if windows and not _time_in_windows(now_dt, windows):
+                continue
+
+            # Check interval
+            interval = strategy_conf.get('execution_interval', 20)
+            last_run = self.strategy_last_run.get(strategy_key)
+            if last_run and (now_dt - last_run).total_seconds() < interval:
+                continue
+            
+            for code, name in watchlist:
+                self.execute_strategy(strategy_key, code, name, now_dt)
+            
+            self.strategy_last_run[strategy_key] = now_dt
 
 
 def _time_in_windows(now: datetime, windows: List[Tuple[str, str]]) -> bool:
@@ -202,8 +230,6 @@ def _time_in_windows(now: datetime, windows: List[Tuple[str, str]]) -> bool:
     return False
 
 
-FIXED_WINDOWS = [('09:29:40', '11:31:00'), ('12:59:00', '15:01:00')]
-FIXED_INTERVAL = 20
 
 
 def main():
@@ -223,6 +249,11 @@ def main():
             
             logger.info(f"开始模拟: {start_date} -> {end_date}")
             
+            min_interval = 20
+            for conf in STRATEGY_CONFIG:
+                if conf.get('enabled'):
+                     min_interval = min(min_interval, conf.get('execution_interval', 20))
+            
             curr_date = start_date
             while curr_date <= end_date:
                 # 跳过非交易日
@@ -232,16 +263,15 @@ def main():
                     curr_date += timedelta(days=1)
                     continue
 
-                # 遍历当天的所有交易时间点
-                for start_time_str, end_time_str in FIXED_WINDOWS:
-                    start_dt = datetime.combine(curr_date, datetime.strptime(start_time_str, '%H:%M:%S').time())
-                    end_dt = datetime.combine(curr_date, datetime.strptime(end_time_str, '%H:%M:%S').time())
-                    
-                    curr_dt = start_dt
-                    while curr_dt <= end_dt:
-                        logger.info(f"Simulating {curr_dt}")
-                        s.run_once(curr_dt)
-                        curr_dt += timedelta(seconds=FIXED_INTERVAL)
+                # 模拟时间范围 09:00 - 15:30
+                sim_start = datetime.combine(curr_date, datetime.strptime('09:00:00', '%H:%M:%S').time())
+                sim_end = datetime.combine(curr_date, datetime.strptime('15:30:00', '%H:%M:%S').time())
+                
+                curr_dt = sim_start
+                while curr_dt <= sim_end:
+                    logger.info(f"Simulating {curr_dt}")
+                    s.run_strategies(curr_dt)
+                    curr_dt += timedelta(seconds=min_interval)
                 
                 curr_date += timedelta(days=1)
             
@@ -249,22 +279,28 @@ def main():
             return
 
         if args.test_mode:
-            s.run_once()
+            s.run_strategies()
             return
         if not s.is_trading_day():
             logger.info('非交易日，跳过')
             return
+            
+        latest_end = datetime.strptime('00:00:00', '%H:%M:%S').time()
+        for conf in STRATEGY_CONFIG:
+            if conf.get('enabled'):
+                for _, e_str in conf.get('execution_windows', []):
+                        e = datetime.strptime(e_str, '%H:%M:%S').time()
+                        if e > latest_end:
+                            latest_end = e
+
         while True:
             now = datetime.now()
-            if not _time_in_windows(now, FIXED_WINDOWS):
-                last_end = datetime.strptime(FIXED_WINDOWS[-1][1], '%H:%M:%S').time()
-                if now.time() > last_end:
-                    logger.info('超过结束时间，退出')
-                    break
-                time.sleep(min(FIXED_INTERVAL, 20))
-                continue
-            s.run_once()
-            time.sleep(FIXED_INTERVAL)
+            if now.time() > latest_end:
+                logger.info('超过结束时间，退出')
+                break
+            
+            s.run_strategies(now)
+            time.sleep(1)
     except Exception as e:
         logger.error(f'程序失败: {e}')
     finally:
