@@ -2,7 +2,8 @@ from .common import calc_volume_ratio
 
 def check(strategy, code: str, stock_name: str, now_dt=None):
     """
-    卖出条件3: 当日开始下跌且当日量比<0.5时则立即卖出
+    量比条件:
+    1. 当日开始下跌且当日量比<0.5时则立即卖出
     """
     try:
         ok, ratio, msg, data = calc_volume_ratio(strategy, code, now_dt)

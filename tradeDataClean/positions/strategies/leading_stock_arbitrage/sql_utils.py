@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Dict, Any
 from .constants import strategy_name as STRATEGY_NAME
 
 def get_subquery_stock_tick(now_dt: datetime) -> str:
@@ -7,7 +8,14 @@ def get_subquery_stock_tick(now_dt: datetime) -> str:
     """
     d = now_dt.strftime('%Y-%m-%d')
     t = now_dt.strftime('%H:%M:%S')
-    return f"(SELECT * FROM trade_market_stock_tick WHERE trade_date <= '{d}' AND trade_time <= '{t}')"
+    return f"(SELECT * FROM trade_market_stock_tick WHERE trade_date <= '{d}' AND trade_time <= '{t}' order by trade_time desc limit 1)"
+
+def get_subquery_stock_basic_daily(now_dt: datetime) -> str:
+    """
+    T+1离线数据: trade_date < today
+    """
+    d = now_dt.strftime('%Y-%m-%d')
+    return f"(SELECT * FROM trade_market_stock_basic_daily WHERE trade_date < '{d}')"
 
 def get_subquery_stock_daily(now_dt: datetime) -> str:
     """
@@ -39,3 +47,12 @@ def get_subquery_related_theme(now_dt: datetime) -> str:
     """
     d = now_dt.strftime('%Y-%m-%d')
     return f"(SELECT * FROM trade_factor_most_related_theme WHERE trade_date < '{d}')"
+
+def get_daily_watchlist_codes(cursor: Any, now_dt: datetime) -> Dict[str, str]:
+    """
+    获取每日自选股列表 (从 ptm_user_watchlist)
+    返回: {stock_code: stock_name}
+    """
+    cursor.execute("SELECT stock_code, stock_name FROM ptm_user_watchlist WHERE is_active=1")
+    rows = cursor.fetchall()
+    return {r[0]: r[1] for r in rows if r and r[0]}

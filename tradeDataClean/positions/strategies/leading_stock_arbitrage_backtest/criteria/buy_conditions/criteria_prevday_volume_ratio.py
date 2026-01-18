@@ -25,15 +25,27 @@ def check(strategy, code: str, stock_name: str, now_dt=None):
                 )
                 drow = c.fetchone()
                 tdate = drow[0]
-            # 当日最新分时的累计量能（tick volume 假设为累计）与对应时间
+            # 当日最新分时的累计量能与对应时间
+            # 先获取最接近且晚于 now_dt 的时间 (即 >= now_t)
+            # 如果是回测，view_tick 已经过滤了 time <= now_t，所以直接取 MAX 即可
+            # 但为了严谨，我们显式查询 MIN(trade_time) >= now_t 的记录，如果没有则取 MAX
+            
+            check_time = now_dt.strftime('%H:%M:%S')
             c.execute(
-                f"SELECT trade_time, volume FROM {view_tick} as t WHERE code=%s AND trade_date=%s ORDER BY trade_time DESC LIMIT 1",
-                (code, tdate),
+                f"SELECT MAX(trade_time) FROM {view_tick} as t WHERE code=%s AND trade_date=%s AND trade_time <= %s",
+                (code, tdate, check_time),
             )
-            vrow = c.fetchone()
-            if not vrow:
-                return False, '当日分时数据缺失', {'ratio': 0.0}
-            curr_time, pre_vol = vrow[0], float(vrow[1] or 0.0)
+            max_time_row = c.fetchone()
+            curr_time = max_time_row[0]
+            # 再计算该时间点之前的累计量能
+            c.execute(
+                f"SELECT COALESCE(SUM(volume),0) FROM {view_tick} as t WHERE code=%s AND trade_date=%s AND trade_time<=%s",
+                (code, tdate, curr_time),
+            )
+            vol_row = c.fetchone()
+            if not vol_row:
+                 return False, '当日分时量能获取失败', {'ratio': 0.0}
+            pre_vol = float(vol_row[0] or 0.0)
             # 昨日分时量能（5分钟粒度）：选择首个 trade_time >= 当前时间 的bar，取该时点之前的累计量能以对齐口径
             c.execute(
                 f"SELECT MAX(trade_date) FROM {view_5min} as t WHERE code=%s AND trade_date<%s",

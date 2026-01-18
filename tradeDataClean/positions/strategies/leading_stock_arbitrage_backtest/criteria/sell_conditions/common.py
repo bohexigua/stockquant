@@ -55,14 +55,34 @@ def calc_volume_ratio(strategy, code: str, now_dt: datetime):
                 tdate = drow[0]
 
             # 当日最新分时的累计量能
+            # 先获取最接近且晚于 now_dt 的时间 (即 >= now_t)
+            check_time = now_dt.strftime('%H:%M:%S')
             c.execute(
-                f"SELECT trade_time, volume, price, pre_close, open FROM {view_tick} as t WHERE code=%s AND trade_date=%s ORDER BY trade_time DESC LIMIT 1",
-                (code, tdate),
+                f"SELECT MAX(trade_time) FROM {view_tick} as t WHERE code=%s AND trade_date=%s AND trade_time <= %s",
+                (code, tdate, check_time),
             )
-            vrow = c.fetchone()
-            if not vrow:
-                return False, 0.0, '当日分时数据缺失'
-            curr_time, pre_vol, price, pre_close, open_price = vrow[0], float(vrow[1] or 0.0), float(vrow[2] or 0.0), float(vrow[3] or 0.0), float(vrow[4] or 0.0)
+            max_time_row = c.fetchone()
+            curr_time = max_time_row[0]
+
+            # 再计算该时间点之前的累计量能和其他数据
+            c.execute(
+                f"SELECT COALESCE(SUM(volume),0) FROM {view_tick} as t WHERE code=%s AND trade_date=%s AND trade_time<=%s",
+                (code, tdate, curr_time),
+            )
+            vol_row = c.fetchone()
+            if not vol_row:
+                 return False, 0.0, '当日分时量能获取失败'
+            pre_vol = float(vol_row[0] or 0.0)
+            
+            # 获取当前价格信息 (取该时刻最新的 tick)
+            c.execute(
+                f"SELECT price, pre_close, open FROM {view_tick} as t WHERE code=%s AND trade_date=%s AND trade_time<=%s ORDER BY trade_time DESC LIMIT 1",
+                (code, tdate, curr_time),
+            )
+            price_row = c.fetchone()
+            if not price_row:
+                return False, 0.0, '当日价格数据缺失'
+            price, pre_close, open_price = float(price_row[0] or 0.0), float(price_row[1] or 0.0), float(price_row[2] or 0.0)
 
             # 昨日分时量能
             c.execute(

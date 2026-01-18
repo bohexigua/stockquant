@@ -75,10 +75,10 @@ class SellStrategy:
             self.write_strategy_evaluation(code, stock_name, 'SELL', 0, '未满足T+1，跳过卖出', now_dt=now_dt)
             return None
             
-        # 1. 不在自选列表中
+        # 1. 量价条件 (不在自选 或 连续缩量滞涨)
         try:
-            from .criteria.sell_conditions import criteria_not_in_watchlist
-            ok, reason, data = criteria_not_in_watchlist.check(self, code, stock_name, now_dt)
+            from .criteria.sell_conditions import criteria_price_volume
+            ok, reason, data = criteria_price_volume.check(self, code, stock_name, now_dt)
             if ok:
                 price = float(data.get('price') or 0.0)
                 trade_dt = now_dt if now_dt else datetime.now()
@@ -87,22 +87,10 @@ class SellStrategy:
         except Exception:
             pass
 
-        # 2. 连续2个交易日缩量
+        # 2. 量比条件 (下跌且量比极低)
         try:
-            from .criteria.sell_conditions import criteria_shrinking_volume
-            ok, reason, data = criteria_shrinking_volume.check(self, code, stock_name, now_dt)
-            if ok:
-                price = float(data.get('price') or 0.0)
-                trade_dt = now_dt if now_dt else datetime.now()
-                self.write_strategy_evaluation(code, stock_name, 'SELL', 1, reason, qty, now_dt=now_dt)
-                return trade_dt, price, qty, reason
-        except Exception:
-            pass
-
-        # 3. 当日开始下跌且量比低
-        try:
-            from .criteria.sell_conditions import criteria_drop_low_volume
-            ok, reason, data = criteria_drop_low_volume.check(self, code, stock_name, now_dt)
+            from .criteria.sell_conditions import criteria_volume_ratio
+            ok, reason, data = criteria_volume_ratio.check(self, code, stock_name, now_dt)
             if ok:
                 price = float(data.get('price') or 0.0)
                 trade_dt = now_dt if now_dt else datetime.now()

@@ -13,6 +13,7 @@ import pymysql
 from config import config
 from tradeDataClean.positions.strategies import strategies
 from tradeDataClean.positions.strategy_config import STRATEGY_CONFIG
+import tradeDataClean.positions.strategies.common.watchlist as common_watchlist
 
 logs_dir = os.path.join(project_root, 'logs')
 os.makedirs(logs_dir, exist_ok=True)
@@ -54,13 +55,35 @@ class TradingScheduler:
             logger.error(f'检查交易日失败: {e}')
             return False
 
-    def get_watchlist_and_positions(self) -> List[Tuple[str, str]]:
+    def get_watchlist_and_positions(self, now_dt: Optional[datetime] = None) -> List[Tuple[str, str]]:
+        if now_dt is None:
+            now_dt = datetime.now()
         try:
             with self.db.cursor() as c:
-                # 获取自选股
-                c.execute("SELECT stock_code, stock_name FROM ptm_user_watchlist WHERE is_active=1")
-                rows = c.fetchall()
-                watchlist_codes = {r[0]: r[1] for r in rows if r and r[0]}
+                # 遍历所有启用的策略，根据配置获取自选股并去重
+                all_watchlist = {} # {code: name}
+                
+                for conf in STRATEGY_CONFIG:
+                    if not conf.get('enabled'):
+                        continue
+                    
+                    func_name = conf.get('watchlist_func')
+                    if func_name and hasattr(common_watchlist, func_name):
+                        func = getattr(common_watchlist, func_name)
+                        try:
+                            # 根据函数签名尝试传参，或者统一接口规范
+                            # 这里假设所有函数都接受 (cursor, now_dt)
+                            codes = func(c, now_dt)
+                            if codes:
+                                for k, v in codes.items():
+                                    if k not in all_watchlist:
+                                        all_watchlist[k] = v
+                        except Exception as e:
+                            logger.error(f"Error calling {func_name}: {e}")
+                    else:
+                        logger.warning(f"Watchlist function {func_name} not found or not configured for strategy {conf.get('key')}")
+
+                watchlist_codes = all_watchlist
                 
                 # 获取持仓股
                 c.execute("SELECT DISTINCT stock_code, stock_name FROM ptm_quant_positions WHERE qty > 0")
@@ -77,7 +100,7 @@ class TradingScheduler:
 
 
     def _get_account_code(self, strategy_name: str) -> str:
-        return f"A_MARKET_{strategy_name}"
+        return f"{strategy_name}"
 
     def position_before(self, code: str, strategy_name: str) -> Tuple[int, float, float]:
         try:
@@ -193,7 +216,7 @@ class TradingScheduler:
         if not self.is_trading_day(now_dt.date()):
             logger.info(f'{now_dt.date()} 非交易日，跳过')
             return
-        watchlist = self.get_watchlist_and_positions()
+        watchlist = self.get_watchlist_and_positions(now_dt)
         if not watchlist:
             logger.info('自选股为空')
             return
@@ -242,6 +265,9 @@ def main():
     s = None
     try:
         s = TradingScheduler(test_mode=args.test_mode)
+
+        enabled_strategies = [conf.get('key') for conf in STRATEGY_CONFIG if conf.get('enabled')]
+        logger.info(f"当前启用策略: {', '.join(enabled_strategies)}")
         
         if args.sim_date_start and args.sim_date_end:
             start_date = datetime.strptime(args.sim_date_start, '%Y-%m-%d').date()
@@ -249,10 +275,29 @@ def main():
             
             logger.info(f"开始模拟: {start_date} -> {end_date}")
             
-            min_interval = 20
+            min_interval = 120
+            
+            # 用于寻找最早开始时间和最晚结束时间
+            earliest_start = None
+            latest_end = None
+
             for conf in STRATEGY_CONFIG:
                 if conf.get('enabled'):
-                     min_interval = min(min_interval, conf.get('execution_interval', 20))
+                    min_interval = min(min_interval, conf.get('execution_interval', 20))
+                    for w_start_str, w_end_str in conf.get('execution_windows', []):
+                        w_start = datetime.strptime(w_start_str, '%H:%M:%S').time()
+                        w_end = datetime.strptime(w_end_str, '%H:%M:%S').time()
+                        
+                        if earliest_start is None or w_start < earliest_start:
+                            earliest_start = w_start
+                        if latest_end is None or w_end > latest_end:
+                            latest_end = w_end
+            
+            # 如果没有找到任何时间窗口，使用默认值
+            if earliest_start is None:
+                earliest_start = datetime.strptime('09:00:00', '%H:%M:%S').time()
+            if latest_end is None:
+                latest_end = datetime.strptime('15:30:00', '%H:%M:%S').time()
             
             curr_date = start_date
             while curr_date <= end_date:
@@ -263,9 +308,9 @@ def main():
                     curr_date += timedelta(days=1)
                     continue
 
-                # 模拟时间范围 09:00 - 15:30
-                sim_start = datetime.combine(curr_date, datetime.strptime('09:00:00', '%H:%M:%S').time())
-                sim_end = datetime.combine(curr_date, datetime.strptime('15:30:00', '%H:%M:%S').time())
+                # 模拟时间范围，使用从配置中获取的最早开始时间和最晚结束时间
+                sim_start = datetime.combine(curr_date, earliest_start)
+                sim_end = datetime.combine(curr_date, latest_end)
                 
                 curr_dt = sim_start
                 while curr_dt <= sim_end:

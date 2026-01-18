@@ -309,11 +309,11 @@ class ThemeCleaner:
             df_cleaned['pct_change'] = pd.to_numeric(df_cleaned['pct_change'], errors='coerce').fillna(0.0)
             
             # 处理行情数据字段
-            df_cleaned['close'] = pd.to_numeric(df_cleaned['close'], errors='coerce')
-            df_cleaned['open'] = pd.to_numeric(df_cleaned['open'], errors='coerce')
-            df_cleaned['high'] = pd.to_numeric(df_cleaned['high'], errors='coerce')
-            df_cleaned['low'] = pd.to_numeric(df_cleaned['low'], errors='coerce')
-            df_cleaned['turnover_rate'] = pd.to_numeric(df_cleaned['turnover_rate'], errors='coerce')
+            df_cleaned['close'] = pd.to_numeric(df_cleaned['close'], errors='coerce').fillna(0.0)
+            df_cleaned['open'] = pd.to_numeric(df_cleaned['open'], errors='coerce').fillna(0.0)
+            df_cleaned['high'] = pd.to_numeric(df_cleaned['high'], errors='coerce').fillna(0.0)
+            df_cleaned['low'] = pd.to_numeric(df_cleaned['low'], errors='coerce').fillna(0.0)
+            df_cleaned['turnover_rate'] = pd.to_numeric(df_cleaned['turnover_rate'], errors='coerce').fillna(0.0)
             
             # up_num字段用0填充（按要求）
             df_cleaned['up_num'] = 0
@@ -450,20 +450,35 @@ class ThemeCleaner:
             logger.info("数据库连接已关闭")
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description='题材数据清洗入库')
+    parser.add_argument('--trade_date', type=str, help='交易日期YYYYMMDD，若提供则仅处理该日')
+    parser.add_argument('--start_date', type=str, help='开始日期YYYYMMDD')
+    parser.add_argument('--end_date', type=str, help='结束日期YYYYMMDD')
+    return parser.parse_args()
+
+
 def main():
     """主函数"""
     
     cleaner = None
     try:
+        args = parse_args()
         # 创建清洗器实例
         cleaner = ThemeCleaner()
         
-        success = cleaner.update_theme_data()
-        
-        if success:
-            logger.info("题材数据处理完成")
+        if args.trade_date:
+            logger.info(f"指定处理日期: {args.trade_date}")
+            cleaner.fetch_theme_data_range(args.trade_date, args.trade_date)
+        elif args.start_date and args.end_date:
+            logger.info(f"指定处理日期范围: {args.start_date} - {args.end_date}")
+            cleaner.fetch_theme_data_range(args.start_date, args.end_date)
         else:
-            logger.error("题材数据处理失败")
+            success = cleaner.update_theme_data()
+            if success:
+                logger.info("题材数据处理完成")
+            else:
+                logger.error("题材数据处理失败")
             
     except Exception as e:
         logger.error(f"程序执行失败: {e}")

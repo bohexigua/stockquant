@@ -7,7 +7,7 @@ import pymysql
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../../../../')))
 
 from config import config
-from tradeDataClean.positions.strategies.leading_stock_arbitrage_backtest.criteria.sell_conditions import criteria_shrinking_volume
+from tradeDataClean.positions.strategies.leading_stock_arbitrage.criteria.sell_conditions import criteria_price_volume
 
 class StrategyMock:
     def __init__(self):
@@ -55,7 +55,7 @@ def test_real_db():
                     break
             
             if in_window:
-                ok, reason, data = criteria_shrinking_volume.check(strategy, code, name, curr_dt)
+                ok, reason, data = criteria_price_volume.check(strategy, code, name, curr_dt)
                 if ok:
                     print(f"[PASS] {curr_dt}: {reason} Data: {data}")
             

@@ -61,6 +61,22 @@ def check(strategy, code: str, stock_name: str, now_dt=None):
             else:
                 y_vol = float(yrow[0])
                 pre_ratio = 0.0 if y_vol <= 0 else (float(pre_vol) / 100.0) / y_vol
+
+            # 获取近5日（不含今日）的收盘价，计算累计涨幅
+            c.execute(
+                f"SELECT close FROM {view_daily} AS t WHERE code=%s AND trade_date < %s ORDER BY trade_date DESC LIMIT 5",
+                (code, tdate)
+            )
+            daily_rows = c.fetchall()
+            five_day_rise = 0.0
+            if len(daily_rows) >= 5:
+                close_5_days_ago = float(daily_rows[4][0])
+                if close_5_days_ago > 0:
+                    five_day_rise = (float(current_price) - close_5_days_ago) / close_5_days_ago
+            else:
+                # 上市不足5日或数据缺失，无法判断，视为不满足
+                five_day_rise = -1.0
+                
     except Exception as e:
         print(f'获取竞价数据异常: {e}')
         return False, '竞价数据获取异常', {}
@@ -71,4 +87,7 @@ def check(strategy, code: str, stock_name: str, now_dt=None):
         return False, f'竞价量能不足，竞价量能占比:{pre_ratio:.2}', {'pre_ratio': pre_ratio}
     if rise > 0.05:
         return False, f'现价涨幅过大:{rise:.2%}，竞价量能占比:{pre_ratio:.2}', {'rise': rise, 'pre_ratio': pre_ratio}
-    return True, '', {'rise': rise, 'pre_close': float(pre_close), 'trade_date': tdate, 'trade_time': current_time, 'price': float(current_price), 'pre_ratio': pre_ratio}
+    if five_day_rise <= 0.10:
+        return False, f'近5日涨幅不足10%: {five_day_rise:.2%}', {'five_day_rise': five_day_rise, 'rise': rise}
+        
+    return True, '', {'rise': rise, 'pre_close': float(pre_close), 'trade_date': tdate, 'trade_time': current_time, 'price': float(current_price), 'pre_ratio': pre_ratio, 'five_day_rise': five_day_rise}
