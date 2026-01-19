@@ -66,6 +66,7 @@ def check(strategy, code: str, stock_name: str, now_dt=None):
                         (peer, tdate),
                     )
                     kt = c.fetchone()
+                    # print(f'股票:{peer}, kt:{kt}, now_dt:{now_dt}')
                     if not kt:
                         continue
                     try:
@@ -87,6 +88,7 @@ def check(strategy, code: str, stock_name: str, now_dt=None):
                 return strong, items
             strong1, peers1 = _count(peers_t1)
             strong2, peers2 = _count(peers_t2)
+            # print(f'板块1:{theme1}, 强势股数:{strong1}, 板块2:{theme2}, 强势股数:{strong2}')
             strong_total = strong1 + strong2
             # 判定条件修改：第一个板块至少1个强势股，或者第二个板块至少3个强势股
             if not (strong1 >= 1 or strong2 >= 3):

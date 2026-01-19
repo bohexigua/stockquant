@@ -8,7 +8,7 @@ def get_subquery_stock_tick(now_dt: datetime) -> str:
     """
     d = now_dt.strftime('%Y-%m-%d')
     t = now_dt.strftime('%H:%M:%S')
-    return f"(SELECT * FROM trade_market_stock_tick WHERE trade_date <= '{d}' AND trade_time <= '{t}' order by trade_time desc limit 1)"
+    return f"(SELECT * FROM trade_market_stock_tick WHERE trade_date <= '{d}' AND trade_time <= '{t}')"
 
 def get_subquery_stock_basic_daily(now_dt: datetime) -> str:
     """
