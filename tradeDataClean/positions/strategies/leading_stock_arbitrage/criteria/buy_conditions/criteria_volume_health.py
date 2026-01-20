@@ -5,6 +5,7 @@ def check(strategy, code: str, stock_name: str, now_dt=None):
             now_dt = datetime.now()
         from tradeDataClean.positions.strategies.leading_stock_arbitrage import sql_utils
         view_daily = sql_utils.get_subquery_stock_daily(now_dt)
+        view_basic_daily = sql_utils.get_subquery_stock_basic_daily(now_dt)
         # 获取最近5条日线数据
         with strategy.db.cursor() as c:
             c.execute(
@@ -12,6 +13,15 @@ def check(strategy, code: str, stock_name: str, now_dt=None):
                 (code,),
             )
             rows = c.fetchall()
+            
+            # 获取前日换手率
+            c.execute(
+                f"SELECT turnover_rate FROM {view_basic_daily} as t WHERE code=%s ORDER BY trade_date DESC LIMIT 1",
+                (code,),
+            )
+            tr_row = c.fetchone()
+            turnover_rate = float(tr_row[0]) if tr_row and tr_row[0] is not None else 0.0
+            
             if not rows:
                 vol_summary = '量能:数据缺失'
                 return False, vol_summary, {'vol_summary': vol_summary}
@@ -52,10 +62,13 @@ def check(strategy, code: str, stock_name: str, now_dt=None):
                 vol_dec += 1
 
         # 判定规则：5日窗口中放大≥3天，且缩量≤2天
-        cond_ok = (vol_dec <= 2) and (vol_inc >= 3)
+        # 如果前日换手率>8%，量能放大2日即可
+        inc_threshold = 2 if turnover_rate > 8.0 else 3
+        cond_ok = (vol_dec <= 2) and (vol_inc >= inc_threshold)
+        print(f'量能:放大{vol_inc}天(需{inc_threshold}),缩量{vol_dec}天,换手{turnover_rate:.1f}%')
             
         if not cond_ok:
-            base_summary = f"量能:放大{vol_inc}天,缩量{vol_dec}天"
+            base_summary = f"量能:放大{vol_inc}天(需{inc_threshold}),缩量{vol_dec}天,换手{turnover_rate:.1f}%"
             return False, base_summary, {
                 'vol_inc': vol_inc,
                 'vol_dec': vol_dec,

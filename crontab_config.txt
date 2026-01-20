@@ -19,3 +19,8 @@
 
 # 删除所有crontab任务的命令:
 # crontab -r
+30 8 * * * /bin/bash /Users/zwldqp/work/stockquant/ai_sector_analysis.sh >> /Users/zwldqp/work/stockquant/logs/ai_sector_analysis.sys.log 2>&1
+15 8 * * * /bin/bash /Users/zwldqp/work/stockquant/jiuyangongshe_pre_summary.sh >> /Users/zwldqp/work/stockquant/logs/jiuyangongshe_pre_summary.sys.log 2>&1
+20 8 * * * /bin/bash /Users/zwldqp/work/stockquant/early_morning_daily_task.sh >> /Users/zwldqp/work/stockquant/logs/early_morning_daily_task.sys.log 2>&1
+15 9 * * 1-5 /bin/bash /Users/zwldqp/work/stockquant/stock_tick_schedule.sh >> /Users/zwldqp/work/stockquant/logs/stock_tick_schedule.sys.log 2>&1
+10 9 * * 1-5 /Users/zwldqp/work/stockquant/quant_trading_schedule.sh

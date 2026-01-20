@@ -63,127 +63,158 @@ def get_watchlist_by_theme(cursor: Any, now_dt: datetime) -> Dict[str, str]:
       trade_factor_most_related_theme tft 
     WHERE 
       tft.trade_date < '{d}'
-      AND LOCATE ( 
-        tft.most_related_theme_name, 
-        "{theme_pattern}" 
-      ) > 0 
-      AND ( 
-        -- 近 20 个交易日有涨停 
-        EXISTS ( 
-          SELECT 
-            1 
-          FROM 
-            trade_factor_most_related_theme t_lu 
-          WHERE 
-            t_lu.stock_code = tft.stock_code 
-            AND t_lu.trade_date < '{d}'
-            AND t_lu.trade_date >= ( 
+      AND (
+        (
+          -- 条件1：板块匹配 
+          LOCATE ( 
+            tft.most_related_theme_name, 
+            "{theme_pattern}" 
+          ) > 0 
+          -- 条件2：满足 (涨停 OR 资金流入) 
+          AND ( 
+            -- 近 20 个交易日有涨停 
+            EXISTS ( 
               SELECT 
-                MIN(trade_date) 
+                1 
+              FROM 
+                trade_factor_most_related_theme t_lu 
+              WHERE 
+                t_lu.stock_code = tft.stock_code 
+                AND t_lu.trade_date < '{d}'
+                AND t_lu.trade_date >= ( 
+                  SELECT 
+                    MIN(trade_date) 
+                  FROM 
+                    ( 
+                      SELECT DISTINCT 
+                        trade_date 
+                      FROM 
+                        trade_factor_most_related_theme 
+                      WHERE trade_date < '{d}'
+                      ORDER BY 
+                        trade_date DESC 
+                      LIMIT 
+                        20 
+                    ) r_x 
+                ) 
+            ) 
+            OR 
+            -- 近 7 个交易日有 2 次 TOP-500 资金流入 
+            tft.stock_code IN ( 
+              SELECT 
+                code 
+              FROM 
+                ( 
+                  SELECT 
+                    code, 
+                    COUNT(*) AS cnt 
+                  FROM 
+                    ( 
+                      SELECT 
+                        tmf.code, 
+                        ROW_NUMBER() OVER ( 
+                          PARTITION BY 
+                            tmf.trade_date 
+                          ORDER BY 
+                            tmf.net_amount DESC 
+                        ) AS rn 
+                      FROM 
+                        trade_market_stock_fund_flow tmf 
+                      WHERE 
+                        tmf.trade_date < '{d}'
+                        AND tmf.trade_date >= ( 
+                          SELECT 
+                            MIN(trade_date) 
+                          FROM 
+                            ( 
+                              SELECT DISTINCT 
+                                trade_date 
+                              FROM 
+                                trade_market_stock_fund_flow 
+                              WHERE trade_date < '{d}'
+                              ORDER BY 
+                                trade_date DESC 
+                              LIMIT 
+                                7 
+                            ) r_y 
+                        ) 
+                    ) ranked 
+                  WHERE 
+                    rn <= 500 
+                  GROUP BY 
+                    code 
+                  HAVING 
+                    COUNT(*) >= 2 
+                ) fund_top 
+            ) 
+          ) 
+          -- 条件3：近 120 个交易日东财 TOP-100 出现 >= 4 次 
+          AND tft.stock_code IN ( 
+            SELECT 
+              code 
+            FROM 
+              ( 
+                SELECT 
+                  h.code, 
+                  SUM( 
+                    CASE 
+                      WHEN h.hot_rank <= 20 THEN 1 
+                      ELSE 0 
+                    END 
+                  ) AS top100_cnt 
+                FROM 
+                  trade_market_dc_stock_hot h 
+                WHERE 
+                  h.trade_date < '{d}'
+                  AND h.trade_date >= ( 
+                    SELECT 
+                      MIN(trade_date) 
+                    FROM 
+                      ( 
+                        SELECT DISTINCT 
+                          trade_date 
+                        FROM 
+                          trade_market_dc_stock_hot 
+                        WHERE trade_date < '{d}'
+                        ORDER BY 
+                          trade_date DESC 
+                        LIMIT 
+                          120 
+                      ) r_z 
+                  ) 
+                GROUP BY 
+                  h.code 
+                HAVING 
+                  top100_cnt >= 4 
+              ) dc_top 
+          )
+        )
+        -- 条件4：取当日东财 TOP20 出来 
+        OR tft.stock_code IN ( 
+          SELECT 
+            code 
+          FROM 
+            trade_market_dc_stock_hot h 
+          WHERE 
+            h.trade_date >= ( 
+              SELECT 
+                MAX(trade_date) 
               FROM 
                 ( 
                   SELECT DISTINCT 
                     trade_date 
                   FROM 
-                    trade_factor_most_related_theme 
+                    trade_market_dc_stock_hot 
                   WHERE trade_date < '{d}'
                   ORDER BY 
                     trade_date DESC 
                   LIMIT 
-                    20 
-                ) r_x 
+                    1 
+                ) r_z 
             ) 
+            AND h.hot_rank <= 10
         ) 
-        OR 
-        -- 近 7 个交易日有 2 次 TOP-500 资金流入 
-        tft.stock_code IN ( 
-          SELECT 
-            code 
-          FROM 
-            ( 
-              SELECT 
-                code, 
-                COUNT(*) AS cnt 
-              FROM 
-                ( 
-                  SELECT 
-                    tmf.code, 
-                    ROW_NUMBER() OVER ( 
-                      PARTITION BY 
-                        tmf.trade_date 
-                      ORDER BY 
-                        tmf.net_amount DESC 
-                    ) AS rn 
-                  FROM 
-                    trade_market_stock_fund_flow tmf 
-                  WHERE 
-                    tmf.trade_date < '{d}'
-                    AND tmf.trade_date >= ( 
-                      SELECT 
-                        MIN(trade_date) 
-                      FROM 
-                        ( 
-                          SELECT DISTINCT 
-                            trade_date 
-                          FROM 
-                            trade_market_stock_fund_flow 
-                          WHERE trade_date < '{d}'
-                          ORDER BY 
-                            trade_date DESC 
-                          LIMIT 
-                            7 
-                        ) r_y 
-                    ) 
-                ) ranked 
-              WHERE 
-                rn <= 500 
-              GROUP BY 
-                code 
-              HAVING 
-                COUNT(*) >= 2 
-            ) fund_top 
-        ) 
-      ) 
-      -- 近 120 个交易日东财 TOP-100 出现 >= 4 次 
-      AND tft.stock_code IN ( 
-        SELECT 
-          code 
-        FROM 
-          ( 
-            SELECT 
-              h.code, 
-              SUM( 
-                CASE 
-                  WHEN h.hot_rank <= 20 THEN 1 
-                  ELSE 0 
-                END 
-              ) AS top100_cnt 
-            FROM 
-              trade_market_dc_stock_hot h 
-            WHERE 
-              h.trade_date < '{d}'
-              AND h.trade_date >= ( 
-                SELECT 
-                  MIN(trade_date) 
-                FROM 
-                  ( 
-                    SELECT DISTINCT 
-                      trade_date 
-                    FROM 
-                      trade_market_dc_stock_hot 
-                    WHERE trade_date < '{d}'
-                    ORDER BY 
-                      trade_date DESC 
-                    LIMIT 
-                      120 
-                  ) r_z 
-              ) 
-            GROUP BY 
-              h.code 
-            HAVING 
-              top100_cnt >= 4 
-          ) dc_top 
-      ) 
+      )
     """
     
     try:

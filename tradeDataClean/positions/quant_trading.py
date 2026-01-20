@@ -277,28 +277,20 @@ def main():
             
             min_interval = 120
             
-            # 用于寻找最早开始时间和最晚结束时间
-            earliest_start = None
-            latest_end = None
-
+            # 收集所有启用策略的时间窗口
+            all_windows = []
             for conf in STRATEGY_CONFIG:
                 if conf.get('enabled'):
                     min_interval = min(min_interval, conf.get('execution_interval', 20))
                     for w_start_str, w_end_str in conf.get('execution_windows', []):
                         w_start = datetime.strptime(w_start_str, '%H:%M:%S').time()
                         w_end = datetime.strptime(w_end_str, '%H:%M:%S').time()
-                        
-                        if earliest_start is None or w_start < earliest_start:
-                            earliest_start = w_start
-                        if latest_end is None or w_end > latest_end:
-                            latest_end = w_end
+                        all_windows.append((w_start, w_end))
             
             # 如果没有找到任何时间窗口，使用默认值
-            if earliest_start is None:
-                earliest_start = datetime.strptime('09:00:00', '%H:%M:%S').time()
-            if latest_end is None:
-                latest_end = datetime.strptime('15:30:00', '%H:%M:%S').time()
-            
+            if not all_windows:
+                all_windows = [(datetime.strptime('09:00:00', '%H:%M:%S').time(), datetime.strptime('15:30:00', '%H:%M:%S').time())]
+
             curr_date = start_date
             while curr_date <= end_date:
                 # 跳过非交易日
@@ -308,15 +300,16 @@ def main():
                     curr_date += timedelta(days=1)
                     continue
 
-                # 模拟时间范围，使用从配置中获取的最早开始时间和最晚结束时间
-                sim_start = datetime.combine(curr_date, earliest_start)
-                sim_end = datetime.combine(curr_date, latest_end)
-                
-                curr_dt = sim_start
-                while curr_dt <= sim_end:
-                    logger.info(f"Simulating {curr_dt}")
-                    s.run_strategies(curr_dt)
-                    curr_dt += timedelta(seconds=min_interval)
+                # 遍历每个合并后的时间窗口进行模拟
+                for w_start, w_end in all_windows:
+                    sim_start = datetime.combine(curr_date, w_start)
+                    sim_end = datetime.combine(curr_date, w_end)
+                    
+                    curr_dt = sim_start
+                    while curr_dt <= sim_end:
+                        logger.info(f"Simulating {curr_dt}")
+                        s.run_strategies(curr_dt)
+                        curr_dt += timedelta(seconds=min_interval)
                 
                 curr_date += timedelta(days=1)
             

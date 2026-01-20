@@ -217,30 +217,21 @@ class StockHotCleaner:
             return pd.DataFrame()
     
     def _get_trading_dates_in_range(self, start_date: str, end_date: str) -> List[str]:
-        """获取指定日期范围内的所有交易日"""
+        """获取指定日期范围内的所有日期（不区分是否为交易日）"""
         try:
-            with self.connection.cursor() as cursor:
-                sql = """
-                SELECT cal_date 
-                FROM trade_market_calendar 
-                WHERE is_open = 1 
-                AND cal_date >= STR_TO_DATE(%s, '%%Y%%m%%d')
-                AND cal_date <= STR_TO_DATE(%s, '%%Y%%m%%d')
-                ORDER BY cal_date
-                """
-                cursor.execute(sql, (start_date, end_date))
-                results = cursor.fetchall()
+            dates = []
+            current_date = datetime.strptime(start_date, '%Y%m%d')
+            end = datetime.strptime(end_date, '%Y%m%d')
+            
+            while current_date <= end:
+                dates.append(current_date.strftime('%Y%m%d'))
+                current_date += timedelta(days=1)
                 
-                if results:
-                    trading_dates = [result[0].strftime('%Y%m%d') for result in results]
-                    logger.info(f"在{start_date}-{end_date}范围内找到{len(trading_dates)}个交易日")
-                    return trading_dates
-                else:
-                    logger.warning(f"在{start_date}-{end_date}范围内未找到交易日")
-                    return []
+            logger.info(f"在{start_date}-{end_date}范围内找到{len(dates)}个日期")
+            return dates
                     
         except Exception as e:
-            logger.error(f"获取交易日期失败: {e}")
+            logger.error(f"获取日期范围失败: {e}")
             return []
     
     def _check_date_exists(self, trade_date: str) -> bool:
@@ -409,18 +400,26 @@ class StockHotCleaner:
 
 def main():
     """主函数"""
+    parser = argparse.ArgumentParser(description='股票热榜数据清洗')
+    parser.add_argument('--start_date', type=str, help='开始日期 (YYYYMMDD)')
+    parser.add_argument('--end_date', type=str, help='结束日期 (YYYYMMDD)')
+    args = parser.parse_args()
     
     cleaner = None
     try:
         # 创建清洗器实例
         cleaner = StockHotCleaner()
         
-        success = cleaner.update_hot_data()
-        
-        if success:
-            logger.info("股票热榜数据处理完成")
+        if args.start_date and args.end_date:
+            logger.info(f"手动指定日期范围: {args.start_date} - {args.end_date}")
+            cleaner.fetch_hot_data_range(args.start_date, args.end_date)
+            logger.info("指定日期范围数据处理完成")
         else:
-            logger.error("股票热榜数据处理失败")
+            success = cleaner.update_hot_data()
+            if success:
+                logger.info("股票热榜数据处理完成")
+            else:
+                logger.error("股票热榜数据处理失败")
             
     except Exception as e:
         logger.error(f"程序执行失败: {e}")
