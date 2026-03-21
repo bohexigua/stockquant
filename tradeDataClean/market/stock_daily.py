@@ -106,11 +106,12 @@ class StockDailyCleaner:
             return datetime.now().strftime('%Y%m%d')
     
     def get_trading_date_range(self) -> tuple:
-        """获取最早和最晚的交易日期"""
+        """获取最早交易日和截至今天的最新交易日"""
         try:
             with self.connection.cursor() as cursor:
                 sql = """
-                SELECT MIN(cal_date) as start_date, MAX(cal_date) as end_date
+                SELECT MIN(cal_date) as start_date,
+                       MAX(CASE WHEN cal_date <= CURDATE() THEN cal_date END) as end_date
                 FROM trade_market_calendar 
                 WHERE is_open = 1
                 """
