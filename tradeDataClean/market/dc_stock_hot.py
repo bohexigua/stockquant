@@ -149,11 +149,6 @@ class StockHotCleaner:
             # 按单日循环获取数据并立即入库
             for trade_date in trading_dates:
                 try:
-                    # 检查当前交易日期是否已存在于数据库中
-                    if self._check_date_exists(trade_date):
-                        logger.info(f"{trade_date}数据已存在，跳过获取")
-                        continue
-                    
                     logger.info(f"正在获取{trade_date}的股票热榜数据")
                     
                     # 设置超时机制
