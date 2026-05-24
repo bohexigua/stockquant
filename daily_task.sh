@@ -5,6 +5,7 @@
 
 # 设置项目根目录
 PROJECT_ROOT="/Users/zwldqp/work/stockquant"
+PYTHON="$PROJECT_ROOT/.venv/bin/python"
 
 # 设置日志目录
 LOG_DIR="$PROJECT_ROOT/logs"
@@ -24,7 +25,7 @@ cd "$PROJECT_ROOT"
 
 # 执行数据清洗脚本
 echo "开始执行数据清洗脚本..." >> "$LOG_FILE"
-python3 "$PROJECT_ROOT/tradeDataClean/main.py" >> "$LOG_FILE" 2>&1
+"$PYTHON" "$PROJECT_ROOT/tradeDataClean/main.py" >> "$LOG_FILE" 2>&1
 DATA_CLEAN_EXIT_CODE=$?
 
 if [ $DATA_CLEAN_EXIT_CODE -eq 0 ]; then
@@ -37,7 +38,7 @@ fi
 
 # 执行因子计算脚本
 echo "开始执行因子计算脚本..." >> "$LOG_FILE"
-python3 "$PROJECT_ROOT/factors/main.py" >> "$LOG_FILE" 2>&1
+"$PYTHON" "$PROJECT_ROOT/factors/main.py" >> "$LOG_FILE" 2>&1
 FACTORS_EXIT_CODE=$?
 
 if [ $FACTORS_EXIT_CODE -eq 0 ]; then
@@ -46,15 +47,27 @@ else
     echo "因子计算脚本执行失败，退出码: $FACTORS_EXIT_CODE" >> "$LOG_FILE"
 fi
 
+# 更新投研题材成分股自动标签
+echo "开始更新投研题材成分股自动标签..." >> "$LOG_FILE"
+"$PYTHON" "$PROJECT_ROOT/tradeDataClean/report/theme_stock_tags.py" >> "$LOG_FILE" 2>&1
+THEME_STOCK_TAGS_EXIT_CODE=$?
+
+if [ $THEME_STOCK_TAGS_EXIT_CODE -eq 0 ]; then
+    echo "投研题材成分股自动标签更新成功" >> "$LOG_FILE"
+else
+    echo "投研题材成分股自动标签更新失败，退出码: $THEME_STOCK_TAGS_EXIT_CODE" >> "$LOG_FILE"
+fi
+
 # 记录任务结束时间
 echo "========================================" >> "$LOG_FILE"
 echo "定时任务执行完成: $(date)" >> "$LOG_FILE"
 echo "数据清洗退出码: $DATA_CLEAN_EXIT_CODE" >> "$LOG_FILE"
 echo "因子计算退出码: $FACTORS_EXIT_CODE" >> "$LOG_FILE"
+echo "题材成分股标签退出码: $THEME_STOCK_TAGS_EXIT_CODE" >> "$LOG_FILE"
 echo "========================================" >> "$LOG_FILE"
 
 # 如果任一脚本失败，返回非零退出码
-if [ $DATA_CLEAN_EXIT_CODE -ne 0 ] || [ $FACTORS_EXIT_CODE -ne 0 ]; then
+if [ $DATA_CLEAN_EXIT_CODE -ne 0 ] || [ $FACTORS_EXIT_CODE -ne 0 ] || [ $THEME_STOCK_TAGS_EXIT_CODE -ne 0 ]; then
     exit 1
 fi
 

@@ -57,6 +57,8 @@ class DataCleanScheduler:
                 'stock_basic_daily.py',  # 股票基础信息
                 'stock_daily.py',  # 股票日行情
                 'stock_fund_flow.py',  # 股票日资金流向数据
+                'dc_theme.py',  # 东方财富题材库和题材成分
+                'dc_concept_board.py',  # 东方财富概念板块和概念成分
                 'dc_concept.py',  # 东财概念板块
                 'theme.py',  # 主题板块
                 'most_related_theme.py',  # 榜单关联板块
