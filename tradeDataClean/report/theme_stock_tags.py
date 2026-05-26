@@ -4,8 +4,8 @@
 每日更新投研题材成分股标签。
 
 自动标签：
-- trend_leader：题材内近 X 个交易日涨幅排名靠前
-- former_popular：历史人气股，要求过去 60 天至少 3 次进入东财热榜前 20
+- trend_leader：题材内近 5 个交易日涨幅排名靠前，且达到最低涨幅门槛
+- former_popular：历史人气股，个股全局标签，要求过去 60 天至少 3 次进入东财热榜前 20
 
 人工标签：
 - pure_play：题材最正宗，不由脚本自动生成
@@ -127,7 +127,14 @@ class ThemeStockTagUpdater:
                 (trade_date,),
             )
 
-    def build_trend_leaders(self, trade_date: str, start_date: str, window_days: int, top_n: int) -> pd.DataFrame:
+    def build_trend_leaders(
+        self,
+        trade_date: str,
+        start_date: str,
+        window_days: int,
+        top_n: int,
+        min_pct: float,
+    ) -> pd.DataFrame:
         sql = """
         WITH members AS (
             SELECT
@@ -179,26 +186,16 @@ class ThemeStockTagUpdater:
         SELECT *
         FROM ranked
         WHERE rank_value <= %s
+          AND score >= %s
         """
-        return pd.read_sql(sql, self.connection, params=(trade_date, start_date, trade_date, top_n))
+        return pd.read_sql(sql, self.connection, params=(trade_date, start_date, trade_date, top_n, min_pct))
 
-    def build_former_popular(self, trade_date: str, start_date: str, lookback_days: int, top_n: int) -> pd.DataFrame:
+    def build_former_popular(self, trade_date: str, lookback_days: int) -> pd.DataFrame:
         sql = """
-        WITH members AS (
-            SELECT
-                s.trade_date,
-                s.theme_code,
-                t.name AS theme_name,
-                s.ts_code AS stock_code,
-                s.name AS stock_name
-            FROM trade_market_dc_theme_stock s
-            INNER JOIN trade_market_dc_theme t
-              ON t.theme_code = s.theme_code AND t.trade_date = s.trade_date
-            WHERE s.trade_date = %s
-        ),
-        hot_stats AS (
+        WITH hot_stats AS (
             SELECT
                 h.code AS stock_code,
+                MAX(h.name) AS stock_name,
                 COUNT(*) AS hot_days,
                 MIN(h.hot_rank) AS best_hot_rank,
                 AVG(CASE WHEN h.hot_rank <= 100 THEN 1 ELSE 0 END) AS top100_rate
@@ -233,11 +230,11 @@ class ThemeStockTagUpdater:
         ),
         candidates AS (
             SELECT
-                m.trade_date,
-                m.theme_code,
-                m.theme_name,
-                m.stock_code,
-                m.stock_name,
+                %s AS trade_date,
+                'GLOBAL' AS theme_code,
+                '个股全局' AS theme_name,
+                h.stock_code,
+                h.stock_name,
                 COALESCE(h.hot_days, 0) AS hot_days,
                 COALESCE(h.best_hot_rank, 999999) AS best_hot_rank,
                 (
@@ -245,10 +242,9 @@ class ThemeStockTagUpdater:
                     + GREATEST(0, 25 - COALESCE(h.best_hot_rank, 999999)) * 2
                     + LOG10(COALESCE(r.amount_sum, 0) + 10)
                 ) AS score
-            FROM members m
-            LEFT JOIN hot_stats h ON h.stock_code = m.stock_code
-            LEFT JOIN limit_stats l ON l.stock_code = m.stock_code
-            LEFT JOIN recent_perf r ON r.stock_code = m.stock_code
+            FROM hot_stats h
+            LEFT JOIN limit_stats l ON l.stock_code = h.stock_code
+            LEFT JOIN recent_perf r ON r.stock_code = h.stock_code
             WHERE
               COALESCE(h.hot_days, 0) >= 3
               AND COALESCE(h.best_hot_rank, 999999) <= 20
@@ -256,19 +252,17 @@ class ThemeStockTagUpdater:
         ranked AS (
             SELECT
                 *,
-                ROW_NUMBER() OVER (PARTITION BY theme_code ORDER BY score DESC, best_hot_rank ASC, stock_code ASC) AS rank_value
+                ROW_NUMBER() OVER (ORDER BY score DESC, best_hot_rank ASC, stock_code ASC) AS rank_value
             FROM candidates
         )
         SELECT *
         FROM ranked
-        WHERE rank_value <= %s
         """
         return pd.read_sql(
             sql,
             self.connection,
             params=(
                 trade_date,
-                trade_date,
                 lookback_days,
                 trade_date,
                 trade_date,
@@ -277,7 +271,7 @@ class ThemeStockTagUpdater:
                 trade_date,
                 lookback_days,
                 trade_date,
-                top_n,
+                trade_date,
             ),
         )
 
@@ -321,18 +315,31 @@ class ThemeStockTagUpdater:
             cursor.executemany(sql, rows)
         logger.info("%s 入库 %s 条", tag_type, len(rows))
 
-    def update(self, trade_date: str, trend_window: int, trend_top_n: int, popular_lookback: int, popular_top_n: int):
+    def update(
+        self,
+        trade_date: str,
+        trend_window: int,
+        trend_top_n: int,
+        trend_min_pct: float,
+        popular_lookback: int,
+    ):
         self.ensure_table()
         actual_date = self.latest_dc_theme_date(trade_date)
         start_date = self.window_start_date(actual_date, trend_window)
         logger.info("更新标签日期：%s，趋势窗口起点：%s", actual_date, start_date)
 
         self.cleanup_auto_tags(actual_date)
-        trend_df = self.build_trend_leaders(actual_date, start_date, trend_window, trend_top_n)
+        trend_df = self.build_trend_leaders(
+            actual_date,
+            start_date,
+            trend_window,
+            trend_top_n,
+            trend_min_pct,
+        )
         self.insert_tags(trend_df, 'trend_leader', trend_window)
         self.connection.commit()
 
-        former_df = self.build_former_popular(actual_date, start_date, popular_lookback, popular_top_n)
+        former_df = self.build_former_popular(actual_date, popular_lookback)
         self.insert_tags(former_df, 'former_popular', popular_lookback)
         self.connection.commit()
 
@@ -346,8 +353,8 @@ def main():
     parser.add_argument('--date', help='标签日期，默认取最新东财题材日期')
     parser.add_argument('--trend-window', type=int, default=5, help='趋势龙头涨幅窗口交易日数')
     parser.add_argument('--trend-top-n', type=int, default=3, help='每个题材趋势龙头数量')
+    parser.add_argument('--trend-min-pct', type=float, default=10.0, help='趋势龙头最低近窗口涨幅百分比')
     parser.add_argument('--popular-lookback', type=int, default=60, help='前人气股历史观察自然日')
-    parser.add_argument('--popular-top-n', type=int, default=5, help='每个题材前人气股数量')
     args = parser.parse_args()
 
     updater = ThemeStockTagUpdater()
@@ -357,8 +364,8 @@ def main():
             trade_date=trade_date,
             trend_window=args.trend_window,
             trend_top_n=args.trend_top_n,
+            trend_min_pct=args.trend_min_pct,
             popular_lookback=args.popular_lookback,
-            popular_top_n=args.popular_top_n,
         )
     except Exception:
         updater.connection.rollback()
